@@ -13,6 +13,8 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
+import java.util.Random;
+import java.util.Stack;
 
 public class Main extends ApplicationAdapter {
 
@@ -89,12 +91,10 @@ public class Main extends ApplicationAdapter {
     private final float bulletDrawHeight = 38;
 
     // inimigo
-    private float enemyX = playfieldX + 150;
-    private float enemyY = playfieldY + playfieldHeight;
+    private Array<Enemy> enemies;
+    private final int enemyCount = 3;
     private final float enemySize = 40;
-    private final float enemySpeed = 150;
-
-    private boolean enemyAlive = true;
+    private final float enemySpeed = 80;
 
     private boolean bombEffect = false;
     private float bombTimer = 0;
@@ -111,10 +111,15 @@ public class Main extends ApplicationAdapter {
     private float shootTimer = 0;
     private final float shootCooldown = 0.12f;
 
+    //disparos inimigos
+    private Array<EnemyBullet> enemyBullets;
+
+    private final float enemyShotInterval = 1f;
+
     //power
     private Array<PowerItem> powerItems;
     private final float powerItemFallSpeed = 90;
-    private final int enemyPowerReward = 5; // +0.05 Power
+    private final int enemyPowerReward = 15; // +0.05 Power
 
     //hud
     private SpriteBatch batch;
@@ -122,6 +127,33 @@ public class Main extends ApplicationAdapter {
 
     //musica
     private Music backgroundMusic;
+
+    //cartas
+    private boolean choosingCard = false;
+    private Card[] currentCards = new Card[3];
+
+    private Stack<Card> appliedCards = new Stack<>();
+    private Random random = new Random();
+
+    // buffs
+    private int shotLines = 1;
+    private final int maxShotLines = 3;
+
+    private float fireRateMultiplier = 1.0f;
+    private float playerDamageMultiplier = 1.0f;
+
+    private int maxBombs = 3;
+
+    private void spawnEnemy() {
+        Enemy enemy = new Enemy(
+            playfieldX + (float)(Math.random() * (playfieldWidth - enemySize)),
+            playfieldY + playfieldHeight - enemySize
+        );
+
+        enemy.shotTimer = enemyShotInterval * 0.75f;
+
+        enemies.add(enemy);
+    }
 
     @Override
     public void create() {
@@ -158,6 +190,7 @@ public class Main extends ApplicationAdapter {
         backgroundMusic.play();
 
         bullets = new Array<>();
+        enemyBullets = new Array<>();
 
         idleTextures = new Texture[8];
         rightTextures = new Texture[8];
@@ -167,6 +200,12 @@ public class Main extends ApplicationAdapter {
             idleTextures[i] = new Texture("parado" + (i + 1) + ".png");
             rightTextures[i] = new Texture("direita" + (i + 1) + ".png");
             leftTextures[i] = new Texture("esquerda" + (i + 1) + ".png");
+        }
+
+        enemies = new Array<>();
+
+        for (int i = 0; i < enemyCount; i++) {
+            spawnEnemy();
         }
 
     }
@@ -180,229 +219,319 @@ public class Main extends ApplicationAdapter {
             paused = !paused;
         }
         if (!paused) {
-            // ativa modo foco com CTRL
-            focusMode =
-                Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
 
-            float currentSpeed = focusMode ? focusSpeed : normalSpeed;
+            if (choosingCard) {
+                handleCardMouseInput();
+            } else {
 
-            // movimentação
-            float moveX = 0;
-            float moveY = 0;
+                // ativa modo foco com SHIFT
+                focusMode =
+                    Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
+                        Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
 
-            if (Gdx.input.isKeyPressed(Input.Keys.LEFT)) moveX -= 1;
-            if (Gdx.input.isKeyPressed(Input.Keys.RIGHT)) moveX += 1;
-            if (Gdx.input.isKeyPressed(Input.Keys.UP)) moveY += 1;
-            if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) moveY -= 1;
+                float currentSpeed = focusMode ? focusSpeed : normalSpeed;
 
-            // normalizar diagonal
-            float length = (float)Math.sqrt(moveX * moveX + moveY * moveY);
-            if (length != 0) {
-                moveX /= length;
-                moveY /= length;
-            }
+                // movimentação
+                float moveX = 0;
+                float moveY = 0;
 
-            // aplicar velocidade
-            playerX += moveX * currentSpeed * delta;
-            playerY += moveY * currentSpeed * delta;
+                if (Gdx.input.isKeyPressed(Input.Keys.LEFT)) moveX -= 1;
+                if (Gdx.input.isKeyPressed(Input.Keys.RIGHT)) moveX += 1;
+                if (Gdx.input.isKeyPressed(Input.Keys.UP)) moveY += 1;
+                if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) moveY -= 1;
 
-            int targetDirection = 0;
+                // normalizar diagonal
+                float length = (float) Math.sqrt(moveX * moveX + moveY * moveY);
+                if (length != 0) {
+                    moveX /= length;
+                    moveY /= length;
+                }
 
-            if (moveX > 0) {
-                targetDirection = 1;
-            } else if (moveX < 0) {
-                targetDirection = -1;
-            }
+                // aplicar velocidade
+                playerX += moveX * currentSpeed * delta;
+                playerY += moveY * currentSpeed * delta;
 
-            //logica movimentacao
-            spriteTimer += delta;
+                int targetDirection = 0;
 
-            if (spriteTimer >= spriteFrameTime) {
-                spriteTimer = 0;
+                if (moveX > 0) {
+                    targetDirection = 1;
+                } else if (moveX < 0) {
+                    targetDirection = -1;
+                }
 
-                if (targetDirection == 0) {
-                    // voltando para parado
-                    if (spriteFrame > 0) {
-                        spriteFrame--;
-                    } else {
-                        currentDirection = 0;
-                    }
-                } else {
-                    if (currentDirection == 0) {
-                        currentDirection = targetDirection;
-                        spriteFrame = 0;
-                    } else if (currentDirection != targetDirection) {
-                        // mudando de direita para esquerda ou esquerda para direita
+                //logica movimentacao
+                spriteTimer += delta;
+
+                if (spriteTimer >= spriteFrameTime) {
+                    spriteTimer = 0;
+
+                    if (targetDirection == 0) {
+                        // voltando para parado
                         if (spriteFrame > 0) {
                             spriteFrame--;
                         } else {
-                            currentDirection = targetDirection;
-                            spriteFrame = 0;
+                            currentDirection = 0;
                         }
                     } else {
-                        // indo até o frame 8 e parando nele
-                        if (spriteFrame < 7) {
-                            spriteFrame++;
+                        if (currentDirection == 0) {
+                            currentDirection = targetDirection;
+                            spriteFrame = 0;
+                        } else if (currentDirection != targetDirection) {
+                            // mudando de direita para esquerda ou esquerda para direita
+                            if (spriteFrame > 0) {
+                                spriteFrame--;
+                            } else {
+                                currentDirection = targetDirection;
+                                spriteFrame = 0;
+                            }
+                        } else {
+                            // indo até o frame 8 e parando nele
+                            if (spriteFrame < 7) {
+                                spriteFrame++;
+                            }
                         }
                     }
                 }
-            }
 
-            if (currentDirection == 0) {
-                idleTimer += delta;
+                if (currentDirection == 0) {
+                    idleTimer += delta;
 
-                if (idleTimer >= idleFrameTime) {
-                    idleTimer = 0;
-                    idleFrame++;
+                    if (idleTimer >= idleFrameTime) {
+                        idleTimer = 0;
+                        idleFrame++;
 
-                    if (idleFrame >= 8) {
-                        idleFrame = 0;
+                        if (idleFrame >= 8) {
+                            idleFrame = 0;
+                        }
                     }
+                } else {
+                    idleFrame = 0;
+                    idleTimer = 0;
                 }
-            } else {
-                idleFrame = 0;
-                idleTimer = 0;
-            }
 
-            // limitar ao playfield
-            playerX = Math.max(
-                playfieldX,
-                Math.min(playerX, playfieldX + playfieldWidth - playerDrawWidth)
-            );
+                // limitar ao playfield
+                playerX = Math.max(
+                    playfieldX,
+                    Math.min(playerX, playfieldX + playfieldWidth - playerDrawWidth)
+                );
 
-            playerY = Math.max(
-                playfieldY,
-                Math.min(playerY, playfieldY + playfieldHeight - playerDrawHeight)
-            );
+                playerY = Math.max(
+                    playfieldY,
+                    Math.min(playerY, playfieldY + playfieldHeight - playerDrawHeight)
+                );
 
-            // grid invisível
-            playerX = Math.round(playerX);
-            playerY = Math.round(playerY);
+                // grid invisível
+                playerX = Math.round(playerX);
+                playerY = Math.round(playerY);
 
-            // tiro com Z
-            shootTimer += delta;
+                // tiro com Z
+                shootTimer += delta;
 
-            if (Gdx.input.isKeyPressed(Input.Keys.Z) && shootTimer >= shootCooldown) {
-                bullets.add(new Bullet(
-                    playerX + hitboxOffsetX - bulletDrawWidth / 2,
-                    playerY + hitboxOffsetY + 20
-                ));
+                if (Gdx.input.isKeyPressed(Input.Keys.Z) && shootTimer >= shootCooldown / fireRateMultiplier) {
 
-                shootTimer = 0;
-            }
+                    float centerX = playerX + hitboxOffsetX - bulletDrawWidth / 2;
+                    float startY = playerY + hitboxOffsetY + 20;
 
-            //bomba
-            if (Gdx.input.isKeyJustPressed(Input.Keys.X) && bombs > 0) {
-                bombs--;
+                    if (shotLines == 1) {
+                        bullets.add(new Bullet(centerX, startY));
+                    } else if (shotLines == 2) {
+                        bullets.add(new Bullet(centerX - 12, startY));
+                        bullets.add(new Bullet(centerX + 12, startY));
+                    } else {
+                        bullets.add(new Bullet(centerX, startY));
+                        bullets.add(new Bullet(centerX - 20, startY));
+                        bullets.add(new Bullet(centerX + 20, startY));
+                    }
 
-                score += 100;
-
-                enemyY = playfieldY + playfieldHeight - enemySize;
-                enemyX = playfieldX + (float)(Math.random() * (playfieldWidth - enemySize));
-
-                bombEffect = true;
-                bombTimer = bombDuration;
-            }
-
-            if (bombEffect) {
-                bombTimer -= delta;
-
-                if (bombTimer <= 0) {
-                    bombEffect = false;
+                    shootTimer = 0;
                 }
-            }
 
-            // atualizar tiros
-            for (int i = bullets.size - 1; i >= 0; i--) {
-                Bullet bullet = bullets.get(i);
-
-                bullet.y += bulletSpeed * delta;
-
-                // colisão tiro + inimigo
-                if (enemyAlive && isCollidingRect(
-                    bullet.x,
-                    bullet.y,
-                    bulletDrawWidth,
-                    bulletDrawHeight,
-
-                    enemyX,
-                    enemyY,
-                    enemySize,
-                    enemySize
-                ))
-                    {
+                //bomba
+                if (Gdx.input.isKeyJustPressed(Input.Keys.X) && bombs > 0) {
+                    bombs--;
 
                     score += 100;
 
-                    spawnPowerItems(enemyX + enemySize / 2, enemyY + enemySize / 2, enemyPowerReward);
+                    for (Enemy enemy : enemies) {
+                        score += 100;
 
-                    enemyY = playfieldY + playfieldHeight - enemySize;
-                    enemyX = playfieldX + (float)(Math.random() * (playfieldWidth - enemySize));
+                        spawnPowerItems(
+                            enemy.x + enemySize / 2,
+                            enemy.y + enemySize / 2,
+                            enemyPowerReward
+                        );
+                    }
 
-                    bullets.removeIndex(i);
-                    continue;
+                    enemies.clear();
+
+                    for (int i = 0; i < enemyCount; i++) {
+                        spawnEnemy();
+                    }
+
+                    enemyBullets.clear();
+
+                    bombEffect = true;
+                    bombTimer = bombDuration;
                 }
 
-                // remove se sair da tela
-                if (bullet.y > playfieldY + playfieldHeight) {
-                    bullets.removeIndex(i);
+                if (bombEffect) {
+                    bombTimer -= delta;
+
+                    if (bombTimer <= 0) {
+                        bombEffect = false;
+                    }
                 }
+
+                // atualizar tiros
+                for (int b = bullets.size - 1; b >= 0; b--) {
+                    Bullet bullet = bullets.get(b);
+
+                    bullet.y += bulletSpeed * delta;
+
+                    boolean bulletRemoved = false;
+
+                    for (int e = enemies.size - 1; e >= 0; e--) {
+                        Enemy enemy = enemies.get(e);
+
+                        if (isCollidingRect(
+                            bullet.x, bullet.y, bulletDrawWidth, bulletDrawHeight,
+                            enemy.x, enemy.y, enemySize, enemySize
+                        )) {
+                            score += 100;
+
+                            spawnPowerItems(
+                                enemy.x + enemySize / 2,
+                                enemy.y + enemySize / 2,
+                                enemyPowerReward
+                            );
+
+                            enemies.removeIndex(e);
+                            spawnEnemy();
+
+                            bullets.removeIndex(b);
+                            bulletRemoved = true;
+                            break;
+                        }
+                    }
+
+                    if (!bulletRemoved && bullet.y > playfieldY + playfieldHeight - bulletDrawHeight) {
+                        bullets.removeIndex(b);
+                    }
+                }
+
+                //colisoes
+                float hitboxX = playerX + hitboxOffsetX - (hitboxSize / 2);
+                float hitboxY = playerY + hitboxOffsetY - (hitboxSize / 2);
+
+                for (Enemy enemy : enemies) {
+                    if (isColliding(
+                        hitboxX, hitboxY, hitboxSize,
+                        enemy.x, enemy.y, enemySize
+                    )) {
+                        lives--;
+                        losePowerOnDeath();
+
+                        if (bombs < 3) {
+                            bombs = 3;
+                        }
+
+                        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
+                        playerY = playfieldY + 80;
+
+                        break;
+                    }
+                }
+
+                for (int i = powerItems.size - 1; i >= 0; i--) {
+                    PowerItem item = powerItems.get(i);
+
+                    item.y -= powerItemFallSpeed * delta;
+
+                    float collectHitboxX = playerX;
+                    float collectHitboxY = playerY;
+
+                    if (isCollidingRect(
+                        collectHitboxX, collectHitboxY, collectHitboxWidth, collectHitboxHeight,
+                        item.x, item.y, item.size, item.size
+                    )) {
+                        gainPower(item.value);
+                        powerItems.removeIndex(i);
+                        continue;
+                    }
+
+                    if (item.y < playfieldY - item.size) {
+                        powerItems.removeIndex(i);
+                    }
+                }
+
+
+                // inimigo descendo
+                for (int i = enemies.size - 1; i >= 0; i--) {
+                    Enemy enemy = enemies.get(i);
+
+                    enemy.y -= enemySpeed * delta;
+
+                    if (enemy.y <= playfieldY + playfieldHeight - enemySize) {
+                        enemy.shotTimer += delta;
+
+                        if (enemy.shotTimer >= enemyShotInterval) {
+                            shootRadialPattern(
+                                enemy.x + enemySize / 2,
+                                enemy.y + enemySize / 2
+                            );
+
+                            enemy.shotTimer = 0;
+                        }
+                    }
+
+                    if (enemy.y < playfieldY - enemySize) {
+                        enemies.removeIndex(i);
+                        spawnEnemy();
+                    }
+                }
+
+                for (int i = enemyBullets.size - 1; i >= 0; i--) {
+
+                    EnemyBullet bullet = enemyBullets.get(i);
+
+                    bullet.x += bullet.speedX * delta;
+                    bullet.y += bullet.speedY * delta;
+
+                    // colisão bala inimiga + hitbox pequena do player
+                    if (isColliding(
+                        hitboxX,
+                        hitboxY,
+                        hitboxSize,
+                        bullet.x - bullet.size / 2,
+                        bullet.y - bullet.size / 2,
+                        bullet.size
+                    )) {
+                        lives--;
+                        losePowerOnDeath();
+
+                        if (bombs < 3) {
+                            bombs = 3;
+                        }
+
+                        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
+                        playerY = playfieldY + 80;
+
+                        enemyBullets.removeIndex(i);
+                        continue;
+                    }
+
+                    // remover quando sair do playfield
+                    if (
+                        bullet.x < playfieldX ||
+                            bullet.x > playfieldX + playfieldWidth ||
+                            bullet.y < playfieldY ||
+                            bullet.y > playfieldY + playfieldHeight
+                    ) {
+                        enemyBullets.removeIndex(i);
+                    }
+                }
+
             }
-
-            //colisoes
-            float hitboxX = playerX + hitboxOffsetX - (hitboxSize / 2);
-            float hitboxY = playerY + hitboxOffsetY - (hitboxSize / 2);
-
-            if (enemyAlive && isColliding(
-                hitboxX, hitboxY, hitboxSize,
-                enemyX, enemyY, enemySize)) {
-
-                lives--;
-
-                if (bombs < 3) {
-                    bombs = 3;
-                }
-
-                playerX = playfieldX + 180;
-                playerY = playfieldY + 80;
-            }
-
-            for (int i = powerItems.size - 1; i >= 0; i--) {
-                PowerItem item = powerItems.get(i);
-
-                item.y -= powerItemFallSpeed * delta;
-
-                float collectHitboxX = playerX;
-                float collectHitboxY = playerY;
-
-                if (isCollidingRect(
-                    collectHitboxX, collectHitboxY, collectHitboxWidth, collectHitboxHeight,
-                    item.x, item.y, item.size, item.size
-                )) {
-                    gainPower(item.value);
-                    powerItems.removeIndex(i);
-                    continue;
-                }
-
-                if (item.y < playfieldY - item.size) {
-                    powerItems.removeIndex(i);
-                }
-            }
-
-
-
-            // inimigo descendo
-            if (enemyAlive) {
-                enemyY -= enemySpeed * delta;
-
-                // se sair da tela, volta para o topo
-                if (enemyY < playfieldY - enemySize) {
-                    enemyY = playfieldY + playfieldHeight - enemySize;
-                    enemyX = playfieldX + (float)(Math.random() * (playfieldWidth - enemySize));
-                }
-            }
-
         }
 
         // limpar tela
@@ -441,14 +570,27 @@ public class Main extends ApplicationAdapter {
         //}
 
         // inimigo
-        if (enemyAlive) {
             shape.setColor(Color.YELLOW);
-            shape.rect(enemyX, enemyY, enemySize, enemySize);
-        }
+
+            for (Enemy enemy : enemies) {
+                shape.rect(enemy.x, enemy.y, enemySize, enemySize);
+            }
+
 
         for (PowerItem item : powerItems) {
             shape.setColor(Color.CYAN);
             shape.rect(item.x, item.y, item.size, item.size);
+        }
+
+        //disparos inimigos
+        shape.setColor(1f, 0f, 0.8f, 1f);
+
+        for (EnemyBullet bullet : enemyBullets) {
+            shape.circle(
+                bullet.x,
+                bullet.y,
+                bullet.size / 2
+            );
         }
 
         shape.end();
@@ -527,6 +669,126 @@ public class Main extends ApplicationAdapter {
             batch.end();
         }
 
+        if (choosingCard) {
+            float panelX = playfieldX + 35;
+            float panelY = playfieldY + 180;
+            float panelW = playfieldWidth - 70;
+            float panelH = 620;
+
+            float cardY = playfieldY + 260;
+            float cardW = 190;
+            float cardH = 330;
+
+            float card1X = playfieldX + 75;
+            float card2X = playfieldX + 290;
+            float card3X = playfieldX + 505;
+
+            shape.begin(ShapeRenderer.ShapeType.Filled);
+
+            shape.setColor(Color.DARK_GRAY);
+            shape.rect(panelX, panelY, panelW, panelH);
+
+            shape.setColor(Color.WHITE);
+            shape.rect(card1X, cardY, cardW, cardH);
+            shape.rect(card2X, cardY, cardW, cardH);
+            shape.rect(card3X, cardY, cardW, cardH);
+
+            shape.end();
+
+            batch.begin();
+
+            font.setColor(Color.WHITE);
+            font.getData().setScale(1.4f);
+
+// título centralizado
+            font.draw(
+                batch,
+                "ESCOLHA UMA CARTA",
+                playfieldX + playfieldWidth / 2 - 170,
+                playfieldY + 760
+            );
+
+            // texto preto nas cartas
+            font.setColor(Color.BLACK);
+
+            // -------- CARTA 1 --------
+
+            font.getData().setScale(1.2f);
+
+            // título centralizado
+            font.draw(
+                batch,
+                currentCards[0].name,
+                card1X + cardW / 2 - currentCards[0].name.length() * 7,
+                cardY + 270
+            );
+
+            font.getData().setScale(0.75f);
+
+            // descrição
+            font.draw(
+                batch,
+                currentCards[0].description,
+                card1X + 12,
+                cardY + 190,
+                cardW - 24,
+                1,
+                true
+            );
+
+            // -------- CARTA 2 --------
+
+            font.getData().setScale(1.2f);
+
+            font.draw(
+                batch,
+                currentCards[1].name,
+                card2X + cardW / 2 - currentCards[1].name.length() * 7,
+                cardY + 270
+            );
+
+            font.getData().setScale(0.75f);
+
+            font.draw(
+                batch,
+                currentCards[1].description,
+                card2X + 12,
+                cardY + 190,
+                cardW - 24,
+                1,
+                true
+            );
+
+            // -------- CARTA 3 --------
+
+            font.getData().setScale(1.2f);
+
+            font.draw(
+                batch,
+                currentCards[2].name,
+                card3X + cardW / 2 - currentCards[2].name.length() * 7,
+                cardY + 270
+            );
+
+            font.getData().setScale(0.75f);
+
+            font.draw(
+                batch,
+                currentCards[2].description,
+                card3X + 12,
+                cardY + 190,
+                cardW - 24,
+                1,
+                true
+            );
+
+            // reset
+            font.setColor(Color.WHITE);
+            font.getData().setScale(2f);
+
+            batch.end();
+        }
+
         if (bombEffect) {
             float progress = bombTimer / bombDuration;
             float alpha = progress * progress;
@@ -578,6 +840,42 @@ public class Main extends ApplicationAdapter {
         }
     }
 
+    class EnemyBullet {
+        float x;
+        float y;
+
+        float speedX;
+        float speedY;
+
+        float size;
+
+        public EnemyBullet(
+            float x,
+            float y,
+            float speedX,
+            float speedY,
+            float size
+        ) {
+            this.x = x;
+            this.y = y;
+
+            this.speedX = speedX;
+            this.speedY = speedY;
+
+            this.size = size;
+        }
+    }
+
+    class Enemy {
+        float x, y;
+        float shotTimer = 0;
+
+        Enemy(float x, float y) {
+            this.x = x;
+            this.y = y;
+        }
+    }
+
     class PowerItem {
         float x;
         float y;
@@ -615,7 +913,7 @@ public class Main extends ApplicationAdapter {
         int newPowerLevel = powerPoints / 100;
 
         if (newPowerLevel > oldPowerLevel) {
-            // futuramente: abrir tela de cartas
+            openCardSelection();
             // Exemplo:
             // choosingCard = true;
             // paused = true;
@@ -652,6 +950,195 @@ public class Main extends ApplicationAdapter {
             x1 + width1 > x2 &&
             y1 < y2 + height2 &&
             y1 + height1 > y2;
+    }
+
+    private void shootRadialPattern(float centerX, float centerY) {
+
+        float speed = 100f;
+
+        for (int i = 0; i < 8; i++) {
+
+            float angle = (float)Math.toRadians(i * 45);
+
+            float speedX = (float)Math.cos(angle) * speed;
+            float speedY = (float)Math.sin(angle) * speed;
+
+            enemyBullets.add(new EnemyBullet(
+                centerX,
+                centerY,
+                speedX,
+                speedY,
+                14
+            ));
+        }
+    }
+
+    enum CardType {
+        EXTRA_SHOT,
+        FIRE_RATE,
+        DAMAGE,
+        EXTRA_BOMB
+    }
+
+    class Card {
+        String name;
+        String description;
+        CardType type;
+
+        public Card(String name, String description, CardType type) {
+            this.name = name;
+            this.description = description;
+            this.type = type;
+        }
+    }
+
+    private void openCardSelection() {
+        choosingCard = true;
+
+        currentCards[0] = generateRandomCard();
+        currentCards[1] = generateRandomCard();
+        currentCards[2] = generateRandomCard();
+    }
+
+    private Card generateRandomCard() {
+        int option = random.nextInt(4);
+
+        switch (option) {
+            case 0:
+                return new Card(
+                    "Tiro Extra",
+                    "Adiciona mais uma linha de tiro. Max: 3",
+                    CardType.EXTRA_SHOT
+                );
+
+            case 1:
+                return new Card(
+                    "Cadencia +",
+                    "Aumenta a velocidade dos disparos",
+                    CardType.FIRE_RATE
+                );
+
+            case 2:
+                return new Card(
+                    "Dano +",
+                    "Aumenta o dano dos disparos",
+                    CardType.DAMAGE
+                );
+
+            default:
+                return new Card(
+                    "Bomba +",
+                    "Aumenta o limite de bombas",
+                    CardType.EXTRA_BOMB
+                );
+        }
+    }
+
+    private void chooseCard(int index) {
+        Card chosen = currentCards[index];
+
+        applyCard(chosen);
+        appliedCards.push(chosen);
+
+        choosingCard = false;
+    }
+
+    private void applyCard(Card card) {
+        switch (card.type) {
+            case EXTRA_SHOT:
+                if (shotLines < maxShotLines) {
+                    shotLines++;
+                }
+                break;
+
+            case FIRE_RATE:
+                fireRateMultiplier += 0.15f;
+                break;
+
+            case DAMAGE:
+                playerDamageMultiplier += 0.20f;
+                break;
+
+            case EXTRA_BOMB:
+                maxBombs++;
+                bombs++;
+                break;
+        }
+    }
+
+    private void removeCard(Card card) {
+        switch (card.type) {
+            case EXTRA_SHOT:
+                if (shotLines > 1) {
+                    shotLines--;
+                }
+                break;
+
+            case FIRE_RATE:
+                fireRateMultiplier -= 0.15f;
+                if (fireRateMultiplier < 1.0f) {
+                    fireRateMultiplier = 1.0f;
+                }
+                break;
+
+            case DAMAGE:
+                playerDamageMultiplier -= 0.20f;
+                if (playerDamageMultiplier < 1.0f) {
+                    playerDamageMultiplier = 1.0f;
+                }
+                break;
+
+            case EXTRA_BOMB:
+                maxBombs--;
+                if (maxBombs < 3) {
+                    maxBombs = 3;
+                }
+
+                if (bombs > maxBombs) {
+                    bombs = maxBombs;
+                }
+                break;
+        }
+    }
+
+    private void losePowerOnDeath() {
+        for (int i = 0; i < 2; i++) {
+            if (!appliedCards.empty()) {
+                Card lastCard = appliedCards.pop();
+                removeCard(lastCard);
+            }
+        }
+
+        powerPoints -= 200;
+
+        if (powerPoints < 0) {
+            powerPoints = 0;
+        }
+    }
+
+    private void handleCardMouseInput() {
+        if (!Gdx.input.justTouched()) {
+            return;
+        }
+
+        float mouseX = Gdx.input.getX();
+        float mouseY = 960 - Gdx.input.getY();
+
+        float cardY = playfieldY + 260;
+        float cardW = 190;
+        float cardH = 330;
+
+        float card1X = playfieldX + 75;
+        float card2X = playfieldX + 290;
+        float card3X = playfieldX + 505;
+
+        if (isCollidingRect(mouseX, mouseY, 1, 1, card1X, cardY, cardW, cardH)) {
+            chooseCard(0);
+        } else if (isCollidingRect(mouseX, mouseY, 1, 1, card2X, cardY, cardW, cardH)) {
+            chooseCard(1);
+        } else if (isCollidingRect(mouseX, mouseY, 1, 1, card3X, cardY, cardW, cardH)) {
+            chooseCard(2);
+        }
     }
 
 }
