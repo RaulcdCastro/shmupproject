@@ -119,7 +119,7 @@ public class Main extends ApplicationAdapter {
     //power
     private Array<PowerItem> powerItems;
     private final float powerItemFallSpeed = 90;
-    private final int enemyPowerReward = 15; // +0.05 Power
+    private final int enemyPowerReward = 5; // +0.05 Power
 
     //hud
     private SpriteBatch batch;
@@ -136,8 +136,9 @@ public class Main extends ApplicationAdapter {
     private Random random = new Random();
 
     // buffs
-    private int shotLines = 1;
-    private final int maxShotLines = 3;
+    private int sideShotLevel = 0;   // 0 até 2
+    private int homingShotLevel = 0; // 0 até 2
+    private Texture homingShot;
 
     private float fireRateMultiplier = 1.0f;
     private float playerDamageMultiplier = 1.0f;
@@ -165,6 +166,8 @@ public class Main extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = new BitmapFont();
         font.getData().setScale(2);
+        homingShot = new Texture("guiado.png");
+        homingShot.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
 
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pixmap.setColor(Color.WHITE);
@@ -332,15 +335,31 @@ public class Main extends ApplicationAdapter {
                     float centerX = playerX + hitboxOffsetX - bulletDrawWidth / 2;
                     float startY = playerY + hitboxOffsetY + 20;
 
-                    if (shotLines == 1) {
-                        bullets.add(new Bullet(centerX, startY));
-                    } else if (shotLines == 2) {
-                        bullets.add(new Bullet(centerX - 12, startY));
-                        bullets.add(new Bullet(centerX + 12, startY));
-                    } else {
-                        bullets.add(new Bullet(centerX, startY));
-                        bullets.add(new Bullet(centerX - 20, startY));
-                        bullets.add(new Bullet(centerX + 20, startY));
+                    // tiro central
+                    bullets.add(new Bullet(centerX, startY, 0, bulletSpeed, false));
+
+                    // tiros laterais nível 1
+                    if (sideShotLevel >= 1) {
+                        bullets.add(new Bullet(centerX - 18, startY, -90, bulletSpeed, false));
+                        bullets.add(new Bullet(centerX + 18, startY, 90, bulletSpeed, false));
+                    }
+
+                    // tiros laterais nível 2
+                    if (sideShotLevel >= 2) {
+                        bullets.add(new Bullet(centerX - 35, startY, -150, bulletSpeed * 0.95f, false));
+                        bullets.add(new Bullet(centerX + 35, startY, 150, bulletSpeed * 0.95f, false));
+                    }
+
+                    // teleguiados nível 1
+                    if (homingShotLevel >= 1) {
+                        bullets.add(new Bullet(centerX - 50, startY, -120, bulletSpeed * 0.75f, true));
+                        bullets.add(new Bullet(centerX + 50, startY, 120, bulletSpeed * 0.75f, true));
+                    }
+
+                    // teleguiados nível 2
+                    if (homingShotLevel >= 2) {
+                        bullets.add(new Bullet(centerX - 70, startY, -180, bulletSpeed * 0.7f, true));
+                        bullets.add(new Bullet(centerX + 70, startY, 180, bulletSpeed * 0.7f, true));
                     }
 
                     shootTimer = 0;
@@ -386,7 +405,31 @@ public class Main extends ApplicationAdapter {
                 for (int b = bullets.size - 1; b >= 0; b--) {
                     Bullet bullet = bullets.get(b);
 
-                    bullet.y += bulletSpeed * delta;
+                    if (bullet.homing) {
+                        Enemy target = findClosestEnemy(bullet.x, bullet.y);
+
+                        if (target != null) {
+                            float targetX = target.x + enemySize / 2;
+                            float targetY = target.y + enemySize / 2;
+
+                            float dx = targetX - bullet.x;
+                            float dy = targetY - bullet.y;
+
+                            float homingLength = (float)Math.sqrt(dx * dx + dy * dy);
+
+                            if (homingLength != 0) {
+                                dx /= homingLength;
+                                dy /= homingLength;
+
+                                float homingSpeed = bulletSpeed * 0.8f;
+                                bullet.speedX = dx * homingSpeed;
+                                bullet.speedY = dy * homingSpeed;
+                            }
+                        }
+                    }
+
+                    bullet.x += bullet.speedX * delta;
+                    bullet.y += bullet.speedY * delta;
 
                     boolean bulletRemoved = false;
 
@@ -414,7 +457,11 @@ public class Main extends ApplicationAdapter {
                         }
                     }
 
-                    if (!bulletRemoved && bullet.y > playfieldY + playfieldHeight - bulletDrawHeight) {
+                    if (!bulletRemoved && (
+                        bullet.y > playfieldY + playfieldHeight - bulletDrawHeight ||
+                            bullet.x < playfieldX - bulletDrawWidth ||
+                            bullet.x > playfieldX + playfieldWidth
+                    )) {
                         bullets.removeIndex(b);
                     }
                 }
@@ -617,8 +664,10 @@ public class Main extends ApplicationAdapter {
         );
 
         for (Bullet bullet : bullets) {
+            Texture shotTexture = bullet.homing ? homingShot : reimuShot;
+
             batch.draw(
-                reimuShot,
+                shotTexture,
                 bullet.x,
                 bullet.y,
                 bulletDrawWidth,
@@ -820,6 +869,7 @@ public class Main extends ApplicationAdapter {
         uiBackground.dispose();
         reimuShot.dispose();
         whitePixel.dispose();
+        homingShot.dispose();
 
         for (int i = 0; i < 8; i++) {
             idleTextures[i].dispose();
@@ -833,10 +883,16 @@ public class Main extends ApplicationAdapter {
     class Bullet {
         float x;
         float y;
+        float speedX;
+        float speedY;
+        boolean homing;
 
-        public Bullet(float x, float y) {
+        public Bullet(float x, float y, float speedX, float speedY, boolean homing) {
             this.x = x;
             this.y = y;
+            this.speedX = speedX;
+            this.speedY = speedY;
+            this.homing = homing;
         }
     }
 
@@ -974,7 +1030,8 @@ public class Main extends ApplicationAdapter {
     }
 
     enum CardType {
-        EXTRA_SHOT,
+        SIDE_SHOT,
+        HOMING_SHOT,
         FIRE_RATE,
         DAMAGE,
         EXTRA_BOMB
@@ -1001,36 +1058,33 @@ public class Main extends ApplicationAdapter {
     }
 
     private Card generateRandomCard() {
-        int option = random.nextInt(4);
+        int option = random.nextInt(8);
+
+        if (option == 0 && sideShotLevel < 2) {
+            return new Card(
+                "Tiro Lateral",
+                "Adiciona 2 disparos laterais.",
+                CardType.SIDE_SHOT
+            );
+        }
+
+        if (option == 1 && homingShotLevel < 2) {
+            return new Card(
+                "Tiro Teleguiado",
+                "Adiciona 2 disparos que seguem inimigos.",
+                CardType.HOMING_SHOT
+            );
+        }
+
+        option = random.nextInt(3);
 
         switch (option) {
             case 0:
-                return new Card(
-                    "Tiro Extra",
-                    "Adiciona mais uma linha de tiro. Max: 3",
-                    CardType.EXTRA_SHOT
-                );
-
+                return new Card("Cadencia +", "Aumenta a velocidade dos disparos.", CardType.FIRE_RATE);
             case 1:
-                return new Card(
-                    "Cadencia +",
-                    "Aumenta a velocidade dos disparos",
-                    CardType.FIRE_RATE
-                );
-
-            case 2:
-                return new Card(
-                    "Dano +",
-                    "Aumenta o dano dos disparos",
-                    CardType.DAMAGE
-                );
-
+                return new Card("Dano +", "Aumenta o dano dos disparos.", CardType.DAMAGE);
             default:
-                return new Card(
-                    "Bomba +",
-                    "Aumenta o limite de bombas",
-                    CardType.EXTRA_BOMB
-                );
+                return new Card("Bomba +", "Aumenta o limite de bombas.", CardType.EXTRA_BOMB);
         }
     }
 
@@ -1045,10 +1099,12 @@ public class Main extends ApplicationAdapter {
 
     private void applyCard(Card card) {
         switch (card.type) {
-            case EXTRA_SHOT:
-                if (shotLines < maxShotLines) {
-                    shotLines++;
-                }
+            case SIDE_SHOT:
+                if (sideShotLevel < 2) sideShotLevel++;
+                break;
+
+            case HOMING_SHOT:
+                if (homingShotLevel < 2) homingShotLevel++;
                 break;
 
             case FIRE_RATE:
@@ -1068,10 +1124,12 @@ public class Main extends ApplicationAdapter {
 
     private void removeCard(Card card) {
         switch (card.type) {
-            case EXTRA_SHOT:
-                if (shotLines > 1) {
-                    shotLines--;
-                }
+            case SIDE_SHOT:
+                if (sideShotLevel > 0) sideShotLevel--;
+                break;
+
+            case HOMING_SHOT:
+                if (homingShotLevel > 0) homingShotLevel--;
                 break;
 
             case FIRE_RATE:
@@ -1139,6 +1197,24 @@ public class Main extends ApplicationAdapter {
         } else if (isCollidingRect(mouseX, mouseY, 1, 1, card3X, cardY, cardW, cardH)) {
             chooseCard(2);
         }
+    }
+
+    private Enemy findClosestEnemy(float x, float y) {
+        Enemy closest = null;
+        float closestDistance = Float.MAX_VALUE;
+
+        for (Enemy enemy : enemies) {
+            float dx = enemy.x - x;
+            float dy = enemy.y - y;
+            float distance = dx * dx + dy * dy;
+
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closest = enemy;
+            }
+        }
+
+        return closest;
     }
 
 }
