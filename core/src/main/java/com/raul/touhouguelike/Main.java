@@ -14,6 +14,7 @@ import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
+import com.badlogic.gdx.math.Matrix4;
 import java.util.Random;
 import java.util.Stack;
 
@@ -191,6 +192,31 @@ public class Main extends ApplicationAdapter {
         return playfieldX + random.nextFloat() * (playfieldWidth - enemySize);
     }
 
+    private void drawFullscreenBackground() {
+        int screenWidth = Gdx.graphics.getWidth();
+        int screenHeight = Gdx.graphics.getHeight();
+
+        float textureWidth = uiBackground.getWidth();
+        float textureHeight = uiBackground.getHeight();
+
+        float scale = Math.max(
+            screenWidth / textureWidth,
+            screenHeight / textureHeight
+        );
+
+        float drawWidth = textureWidth * scale;
+        float drawHeight = textureHeight * scale;
+
+        float drawX = (screenWidth - drawWidth) / 2f;
+        float drawY = (screenHeight - drawHeight) / 2f;
+
+        batch.setProjectionMatrix(new Matrix4().setToOrtho2D(0, 0, screenWidth, screenHeight));
+        batch.begin();
+        batch.draw(uiBackground, drawX, drawY, drawWidth, drawHeight);
+        batch.end();
+        batch.setProjectionMatrix(camera.combined);
+    }
+
     @Override
     public void create() {
         shape = new ShapeRenderer();
@@ -213,6 +239,10 @@ public class Main extends ApplicationAdapter {
         powerItems = new Array<>();
 
         uiBackground = new Texture("ui_background.png");
+        uiBackground.setFilter(
+            Texture.TextureFilter.Linear,
+            Texture.TextureFilter.Linear
+        );
 
         reimuShot = new Texture("reimutiro.png");
         enemyTexture = new Texture("inimigo.png");
@@ -569,22 +599,9 @@ public class Main extends ApplicationAdapter {
         shape.setProjectionMatrix(camera.combined);
 
         batch.setProjectionMatrix(camera.combined);
-        batch.begin();
-
-        batch.draw(uiBackground, 0, 0, 1280, 960);
-
-        batch.end();
+        drawFullscreenBackground();
 
         shape.begin(ShapeRenderer.ShapeType.Filled);
-
-        // fundo preto do playfield
-        shape.setColor(Color.BLACK);
-        shape.rect(
-            playfieldX,
-            playfieldY,
-            playfieldWidth,
-            playfieldHeight
-        );
 
         // player
         //shape.setColor(Color.WHITE);
