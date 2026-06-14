@@ -13,6 +13,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import java.util.Random;
 import java.util.Stack;
 
@@ -23,6 +24,15 @@ public class Main extends ApplicationAdapter {
 
     //pausar
     private boolean paused = false;
+    private boolean gameOver = false;
+    private final float gameOverPanelX = 1280 / 2f - 300;
+    private final float gameOverPanelY = 960 / 2f - 190;
+    private final float gameOverPanelW = 600;
+    private final float gameOverPanelH = 380;
+    private final float gameOverButtonX = 1280 / 2f - 150;
+    private final float gameOverButtonY = 960 / 2f - 92;
+    private final float gameOverButtonW = 300;
+    private final float gameOverButtonH = 76;
 
     //play field
     private final float playfieldX = 64;
@@ -86,6 +96,7 @@ public class Main extends ApplicationAdapter {
 
     //sprite tiro
     private Texture reimuShot;
+    private Texture enemyTexture;
 
     private final float bulletDrawWidth = 20;
     private final float bulletDrawHeight = 38;
@@ -93,7 +104,9 @@ public class Main extends ApplicationAdapter {
     // inimigo
     private Array<Enemy> enemies;
     private final int enemyCount = 3;
-    private final float enemySize = 40;
+    private final float enemySize = 56;
+    private final float enemyDrawWidth = 120;
+    private final float enemyDrawHeight = 56;
     private final float enemySpeed = 80;
 
     private boolean bombEffect = false;
@@ -124,6 +137,7 @@ public class Main extends ApplicationAdapter {
     //hud
     private SpriteBatch batch;
     private BitmapFont font;
+    private GlyphLayout layout;
 
     //musica
     private Music backgroundMusic;
@@ -143,16 +157,38 @@ public class Main extends ApplicationAdapter {
     private float playerDamageMultiplier = 1.0f;
 
     private int maxBombs = 3;
+    private final float enemyMinHorizontalGap = 135f;
 
     private void spawnEnemy() {
+        float enemyX = findEnemySpawnX();
         Enemy enemy = new Enemy(
-            playfieldX + (float)(Math.random() * (playfieldWidth - enemySize)),
+            enemyX,
             playfieldY + playfieldHeight - enemySize
         );
 
         enemy.shotTimer = enemyShotInterval * 0.75f;
 
         enemies.add(enemy);
+    }
+
+    private float findEnemySpawnX() {
+        for (int attempt = 0; attempt < 24; attempt++) {
+            float candidateX = playfieldX + random.nextFloat() * (playfieldWidth - enemySize);
+            boolean tooClose = false;
+
+            for (Enemy enemy : enemies) {
+                if (Math.abs(candidateX - enemy.x) < enemyMinHorizontalGap) {
+                    tooClose = true;
+                    break;
+                }
+            }
+
+            if (!tooClose) {
+                return candidateX;
+            }
+        }
+
+        return playfieldX + random.nextFloat() * (playfieldWidth - enemySize);
     }
 
     @Override
@@ -165,6 +201,7 @@ public class Main extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = new BitmapFont();
         font.getData().setScale(2);
+        layout = new GlyphLayout();
 
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pixmap.setColor(Color.WHITE);
@@ -178,10 +215,15 @@ public class Main extends ApplicationAdapter {
         uiBackground = new Texture("ui_background.png");
 
         reimuShot = new Texture("reimutiro.png");
+        enemyTexture = new Texture("inimigo.png");
 
         reimuShot.setFilter(
             Texture.TextureFilter.Nearest,
             Texture.TextureFilter.Nearest
+        );
+        enemyTexture.setFilter(
+            Texture.TextureFilter.Linear,
+            Texture.TextureFilter.Linear
         );
 
         backgroundMusic = Gdx.audio.newMusic(Gdx.files.internal("musica1.mp3"));
@@ -216,9 +258,11 @@ public class Main extends ApplicationAdapter {
         float delta = Gdx.graphics.getDeltaTime();
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
-            paused = !paused;
+            if (!gameOver) {
+                paused = !paused;
+            }
         }
-        if (!paused) {
+        if (!paused && !gameOver) {
 
             if (choosingCard) {
                 handleCardMouseInput();
@@ -428,15 +472,7 @@ public class Main extends ApplicationAdapter {
                         hitboxX, hitboxY, hitboxSize,
                         enemy.x, enemy.y, enemySize
                     )) {
-                        lives--;
-                        losePowerOnDeath();
-
-                        if (bombs < 3) {
-                            bombs = 3;
-                        }
-
-                        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
-                        playerY = playfieldY + 80;
+                        takePlayerHit();
 
                         break;
                     }
@@ -506,16 +542,7 @@ public class Main extends ApplicationAdapter {
                         bullet.y - bullet.size / 2,
                         bullet.size
                     )) {
-                        lives--;
-                        losePowerOnDeath();
-
-                        if (bombs < 3) {
-                            bombs = 3;
-                        }
-
-                        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
-                        playerY = playfieldY + 80;
-
+                        takePlayerHit();
                         enemyBullets.removeIndex(i);
                         continue;
                     }
@@ -570,13 +597,6 @@ public class Main extends ApplicationAdapter {
         //}
 
         // inimigo
-            shape.setColor(Color.YELLOW);
-
-            for (Enemy enemy : enemies) {
-                shape.rect(enemy.x, enemy.y, enemySize, enemySize);
-            }
-
-
         for (PowerItem item : powerItems) {
             shape.setColor(Color.CYAN);
             shape.rect(item.x, item.y, item.size, item.size);
@@ -626,6 +646,16 @@ public class Main extends ApplicationAdapter {
             );
         }
 
+        for (Enemy enemy : enemies) {
+            batch.draw(
+                enemyTexture,
+                enemy.x - (enemyDrawWidth - enemySize) / 2f,
+                enemy.y - (enemyDrawHeight - enemySize) / 2f,
+                enemyDrawWidth,
+                enemyDrawHeight
+            );
+        }
+
         batch.end();
 
         batch.setProjectionMatrix(camera.combined);
@@ -666,6 +696,76 @@ public class Main extends ApplicationAdapter {
                 playfieldY + playfieldHeight / 2 + 20
             );
 
+            batch.end();
+        }
+
+        if (gameOver) {
+            handleGameOverMouseInput();
+
+            shape.begin(ShapeRenderer.ShapeType.Filled);
+            shape.setColor(0f, 0f, 0f, 0.72f);
+            shape.rect(0, 0, 1280, 960);
+
+            shape.setColor(0.03f, 0.03f, 0.04f, 1f);
+            shape.rect(gameOverPanelX + 10, gameOverPanelY - 8, gameOverPanelW, gameOverPanelH);
+
+            shape.setColor(0.11f, 0.11f, 0.14f, 1f);
+            shape.rect(gameOverPanelX, gameOverPanelY, gameOverPanelW, gameOverPanelH);
+
+            shape.setColor(0.82f, 0.14f, 0.18f, 1f);
+            shape.rect(gameOverPanelX, gameOverPanelY + gameOverPanelH - 10, gameOverPanelW, 10);
+
+            shape.setColor(0.06f, 0.06f, 0.08f, 1f);
+            shape.rect(gameOverPanelX + 16, gameOverPanelY + 16, gameOverPanelW - 32, gameOverPanelH - 32);
+
+            shape.setColor(0.24f, 0.24f, 0.28f, 1f);
+            shape.rect(gameOverButtonX + 7, gameOverButtonY - 7, gameOverButtonW, gameOverButtonH);
+
+            if (isMouseOverGameOverButton()) {
+                shape.setColor(0.92f, 0.22f, 0.25f, 1f);
+            } else {
+                shape.setColor(0.76f, 0.12f, 0.16f, 1f);
+            }
+            shape.rect(gameOverButtonX, gameOverButtonY, gameOverButtonW, gameOverButtonH);
+
+            shape.setColor(1f, 1f, 1f, 0.12f);
+            shape.rect(gameOverButtonX + 4, gameOverButtonY + gameOverButtonH - 12, gameOverButtonW - 8, 8);
+
+            shape.setColor(1f, 1f, 1f, 0.88f);
+            shape.rectLine(gameOverPanelX, gameOverPanelY, gameOverPanelX + gameOverPanelW, gameOverPanelY, 2.5f);
+            shape.rectLine(gameOverPanelX, gameOverPanelY + gameOverPanelH, gameOverPanelX + gameOverPanelW, gameOverPanelY + gameOverPanelH, 2.5f);
+            shape.rectLine(gameOverPanelX, gameOverPanelY, gameOverPanelX, gameOverPanelY + gameOverPanelH, 2.5f);
+            shape.rectLine(gameOverPanelX + gameOverPanelW, gameOverPanelY, gameOverPanelX + gameOverPanelW, gameOverPanelY + gameOverPanelH, 2.5f);
+            shape.rectLine(gameOverButtonX, gameOverButtonY, gameOverButtonX + gameOverButtonW, gameOverButtonY, 2f);
+            shape.rectLine(gameOverButtonX, gameOverButtonY + gameOverButtonH, gameOverButtonX + gameOverButtonW, gameOverButtonY + gameOverButtonH, 2f);
+            shape.rectLine(gameOverButtonX, gameOverButtonY, gameOverButtonX, gameOverButtonY + gameOverButtonH, 2f);
+            shape.rectLine(gameOverButtonX + gameOverButtonW, gameOverButtonY, gameOverButtonX + gameOverButtonW, gameOverButtonY + gameOverButtonH, 2f);
+            shape.end();
+
+            batch.begin();
+
+            font.setColor(0.95f, 0.2f, 0.24f, 1f);
+            font.getData().setScale(3.4f);
+            layout.setText(font, "GAME OVER");
+            font.draw(
+                batch,
+                layout,
+                1280 / 2f - layout.width / 2f,
+                960 / 2f + 110
+            );
+
+            font.setColor(Color.WHITE);
+            font.getData().setScale(1.25f);
+            layout.setText(font, "REINICIAR");
+            font.draw(
+                batch,
+                layout,
+                gameOverButtonX + gameOverButtonW / 2f - layout.width / 2f,
+                gameOverButtonY + 50
+            );
+
+            font.getData().setScale(2f);
+            font.setColor(Color.WHITE);
             batch.end();
         }
 
@@ -819,6 +919,7 @@ public class Main extends ApplicationAdapter {
         backgroundMusic.dispose();
         uiBackground.dispose();
         reimuShot.dispose();
+        enemyTexture.dispose();
         whitePixel.dispose();
 
         for (int i = 0; i < 8; i++) {
@@ -1114,6 +1215,100 @@ public class Main extends ApplicationAdapter {
         if (powerPoints < 0) {
             powerPoints = 0;
         }
+    }
+
+    private void takePlayerHit() {
+        if (gameOver) {
+            return;
+        }
+
+        lives--;
+        losePowerOnDeath();
+
+        if (lives <= 0) {
+            lives = 0;
+            gameOver = true;
+            paused = true;
+            return;
+        }
+
+        if (bombs < 3) {
+            bombs = 3;
+        }
+
+        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
+        playerY = playfieldY + 80;
+    }
+
+    private void resetGame() {
+        paused = false;
+        gameOver = false;
+        choosingCard = false;
+        bombEffect = false;
+        focusMode = false;
+
+        lives = 3;
+        bombs = 3;
+        score = 0;
+        powerPoints = 0;
+
+        shotLines = 1;
+        fireRateMultiplier = 1.0f;
+        playerDamageMultiplier = 1.0f;
+        maxBombs = 3;
+
+        spriteFrame = 0;
+        spriteTimer = 0;
+        currentDirection = 0;
+        idleFrame = 0;
+        idleTimer = 0;
+        shootTimer = 0;
+        bombTimer = 0;
+
+        playerX = playfieldX + 180;
+        playerY = playfieldY + 80;
+
+        bullets.clear();
+        enemyBullets.clear();
+        powerItems.clear();
+        enemies.clear();
+        appliedCards.clear();
+
+        for (int i = 0; i < enemyCount; i++) {
+            spawnEnemy();
+        }
+    }
+
+    private void handleGameOverMouseInput() {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER) ||
+            Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER)) {
+            resetGame();
+            return;
+        }
+
+        if (!Gdx.input.justTouched()) {
+            return;
+        }
+
+        if (isMouseOverGameOverButton()) {
+            resetGame();
+        }
+    }
+
+    private boolean isMouseOverGameOverButton() {
+        float mouseX = Gdx.input.getX();
+        float mouseY = 960 - Gdx.input.getY();
+
+        return isCollidingRect(
+            mouseX,
+            mouseY,
+            1,
+            1,
+            gameOverButtonX,
+            gameOverButtonY,
+            gameOverButtonW,
+            gameOverButtonH
+        );
     }
 
     private void handleCardMouseInput() {
