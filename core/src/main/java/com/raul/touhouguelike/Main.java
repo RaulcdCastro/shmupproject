@@ -15,6 +15,13 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
 import java.util.Random;
 import java.util.Stack;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFontParameter;
+import com.badlogic.gdx.graphics.g2d.Animation;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
+import com.badlogic.gdx.graphics.g2d.Animation;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
 public class Main extends ApplicationAdapter {
 
@@ -72,10 +79,27 @@ public class Main extends ApplicationAdapter {
     private float idleTimer = 0;
     private final float idleFrameTime = 0.10f;
 
+    // fada textura
+    private Texture fairyFrame1;
+    private Texture fairyFrame2;
+    private Texture fairyFrame3;
+    private Texture fairyFrame4;
+
     // vidas, bombas e pontos
     private int lives = 3;
     private int bombs = 3;
     private int score = 0;
+
+    private final float hudX = playfieldX + playfieldWidth + 30;
+
+    private int highScore = 0;
+
+    // carta
+    private Texture cardTexture;
+
+    // estrelas
+    private Texture starFull;
+    private Texture starEmpty;
 
     // power
     private int powerPoints = 0;
@@ -93,8 +117,12 @@ public class Main extends ApplicationAdapter {
     // inimigo
     private Array<Enemy> enemies;
     private final int enemyCount = 3;
-    private final float enemySize = 40;
+    private final float enemySize = 84;
     private final float enemySpeed = 80;
+
+    // fada animacao
+    private Animation<TextureRegion> fairyAnimation;
+    private float fairyAnimationTime = 0f;
 
     private boolean bombEffect = false;
     private float bombTimer = 0;
@@ -121,9 +149,15 @@ public class Main extends ApplicationAdapter {
     private final float powerItemFallSpeed = 90;
     private final int enemyPowerReward = 5; // +0.05 Power
 
+    private Texture powerPequeno;
+
     //hud
     private SpriteBatch batch;
     private BitmapFont font;
+
+    //background
+    private Animation<TextureRegion> backgroundAnimation;
+    private float backgroundTime = 0f;
 
     //musica
     private Music backgroundMusic;
@@ -163,11 +197,37 @@ public class Main extends ApplicationAdapter {
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         camera = new OrthographicCamera();
         camera.setToOrtho(false, 1280, 960);
-        batch = new SpriteBatch();
-        font = new BitmapFont();
-        font.getData().setScale(2);
         homingShot = new Texture("guiado.png");
         homingShot.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        fairyFrame1 = new Texture("fada_movendo01.png");
+        fairyFrame2 = new Texture("fada_movendo02.png");
+        fairyFrame3 = new Texture("fada_movendo03.png");
+        fairyFrame4 = new Texture("fada_movendo04.png");
+
+        cardTexture = new Texture("card.png");
+
+        cardTexture.setFilter(
+            Texture.TextureFilter.Nearest,
+            Texture.TextureFilter.Nearest
+        );
+
+        batch = new SpriteBatch();
+
+        FreeTypeFontGenerator generator =
+            new FreeTypeFontGenerator(
+                Gdx.files.internal("fonts/Bauhaus.ttf")
+            );
+
+        FreeTypeFontParameter parameter =
+            new FreeTypeFontParameter();
+
+        parameter.size = 16;
+
+        font = generator.generateFont(parameter);
+
+        font.getData().setScale(2);
+
+        generator.dispose();
 
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pixmap.setColor(Color.WHITE);
@@ -211,10 +271,73 @@ public class Main extends ApplicationAdapter {
             spawnEnemy();
         }
 
+        starFull = new Texture("star_full.png");
+        starEmpty = new Texture("star_empty.png");
+
+        starFull.setFilter(
+            Texture.TextureFilter.Nearest,
+            Texture.TextureFilter.Nearest
+        );
+
+        starEmpty.setFilter(
+            Texture.TextureFilter.Nearest,
+            Texture.TextureFilter.Nearest
+        );
+
+        Array<TextureRegion> backgroundFrames = new Array<>();
+
+        for (int i = 1; i <= 165; i++) {
+
+            String fileName =
+                String.format("background/frame_%03d.png", i);
+
+            Texture texture = new Texture(fileName);
+
+            texture.setFilter(
+                Texture.TextureFilter.Nearest,
+                Texture.TextureFilter.Nearest
+            );
+
+            backgroundFrames.add(
+                new TextureRegion(texture)
+            );
+        }
+
+        backgroundAnimation =
+            new Animation<>(
+                1f / 60f,
+                backgroundFrames,
+                Animation.PlayMode.LOOP
+            );
+
+        fairyAnimation = new Animation<>(
+            0.12f,
+            new TextureRegion(fairyFrame1),
+            new TextureRegion(fairyFrame2),
+            new TextureRegion(fairyFrame3),
+            new TextureRegion(fairyFrame4)
+        );
+
+        fairyAnimation.setPlayMode(Animation.PlayMode.LOOP);
+
+        powerPequeno = new Texture("power_pequeno.png");
+        powerPequeno.setFilter(
+            Texture.TextureFilter.Nearest,
+            Texture.TextureFilter.Nearest
+        );
+
     }
 
     @Override
     public void render() {
+
+        if (!paused && !choosingCard) {
+            backgroundTime += Gdx.graphics.getDeltaTime();
+        }
+
+        if (!paused && !choosingCard) {
+            fairyAnimationTime += Gdx.graphics.getDeltaTime();
+        }
 
         float delta = Gdx.graphics.getDeltaTime();
 
@@ -365,6 +488,10 @@ public class Main extends ApplicationAdapter {
                     shootTimer = 0;
                 }
 
+                if (score > highScore) {
+                    highScore = score;
+                }
+
                 //bomba
                 if (Gdx.input.isKeyJustPressed(Input.Keys.X) && bombs > 0) {
                     bombs--;
@@ -492,7 +619,18 @@ public class Main extends ApplicationAdapter {
                 for (int i = powerItems.size - 1; i >= 0; i--) {
                     PowerItem item = powerItems.get(i);
 
-                    item.y -= powerItemFallSpeed * delta;
+                    item.velocityY -= 150f * delta;
+                    item.y += item.velocityY * delta;
+
+                    float maxY = playfieldY + playfieldHeight - item.size;
+
+                    if (item.y > maxY) {
+                        item.y = maxY;
+
+                        if (item.velocityY > 0) {
+                            item.velocityY = 0;
+                        }
+                    }
 
                     float collectHitboxX = playerX;
                     float collectHitboxY = playerY;
@@ -593,18 +731,49 @@ public class Main extends ApplicationAdapter {
 
         batch.draw(uiBackground, 0, 0, 1280, 960);
 
-        batch.end();
+        TextureRegion currentFrame =
+            backgroundAnimation.getKeyFrame(backgroundTime);
 
-        shape.begin(ShapeRenderer.ShapeType.Filled);
-
-        // fundo preto do playfield
-        shape.setColor(Color.BLACK);
-        shape.rect(
+        batch.draw(
+            currentFrame,
             playfieldX,
             playfieldY,
             playfieldWidth,
             playfieldHeight
         );
+
+        // fadas
+
+        TextureRegion currentFairyFrame =
+            fairyAnimation.getKeyFrame(fairyAnimationTime);
+
+        for (Enemy enemy : enemies) {
+
+            batch.draw(
+                currentFairyFrame,
+                enemy.x,
+                enemy.y + 18,
+                enemySize,
+                enemySize
+            );
+        }
+
+        for (PowerItem item : powerItems) {
+
+            batch.draw(
+                powerPequeno,
+                item.x,
+                item.y,
+                item.size,
+                item.size = 26
+            );
+        }
+
+        batch.end();
+
+        shape.begin(ShapeRenderer.ShapeType.Filled);
+
+
 
         // player
         //shape.setColor(Color.WHITE);
@@ -617,17 +786,17 @@ public class Main extends ApplicationAdapter {
         //}
 
         // inimigo
-            shape.setColor(Color.YELLOW);
+        //  shape.setColor(Color.YELLOW);
 
-            for (Enemy enemy : enemies) {
-                shape.rect(enemy.x, enemy.y, enemySize, enemySize);
-            }
+        //  for (Enemy enemy : enemies) {
+        //      shape.rect(enemy.x, enemy.y, enemySize, enemySize);
+        //  }
 
 
-        for (PowerItem item : powerItems) {
-            shape.setColor(Color.CYAN);
-            shape.rect(item.x, item.y, item.size, item.size);
-        }
+        // for (PowerItem item : powerItems) {
+        //    shape.setColor(Color.CYAN);
+        //    shape.rect(item.x, item.y, item.size, item.size);
+        //    }
 
         //disparos inimigos
         shape.setColor(1f, 0f, 0.8f, 1f);
@@ -680,10 +849,56 @@ public class Main extends ApplicationAdapter {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
 
-        font.draw(batch, "Score: " + score, 900, 850);
-        font.draw(batch, "Vidas: " + lives, 900, 780);
-        font.draw(batch, "Bombas: " + bombs, 900, 710);
-        font.draw(batch, String.format("Power: %.2f/15.00", powerPoints / 100f), 900, 640);
+        String scoreText = String.format("%09d", score);
+        String highScoreText = String.format("%09d", highScore);
+
+        font.draw(batch, "HiScore", hudX, 880);
+        font.draw(batch, highScoreText, hudX + 150, 880);
+
+        font.draw(batch, "Score", hudX, 830);
+        font.draw(batch, scoreText, hudX + 150, 830);
+
+        font.draw(batch, "Player", hudX, 730);
+
+        for (int i = 0; i < 8; i++) {
+
+            Texture star =
+                (i < lives)
+                    ? starFull
+                    : starEmpty;
+
+            batch.draw(
+                star,
+                hudX + 150 + i * 28,
+                707,
+                24,
+                24
+            );
+        }
+
+        font.draw(batch, "Bomb", hudX, 670);
+
+        for (int i = 0; i < 8; i++) {
+
+            Texture star =
+                (i < bombs)
+                    ? starFull
+                    : starEmpty;
+
+            batch.draw(
+                star,
+                hudX + 150 + i * 28,
+                647,
+                24,
+                24
+            );
+        }
+
+        String powerText =
+            String.format("%.2f / 15.00", powerPoints / 100f);
+
+        font.draw(batch, "Power", hudX, 580);
+        font.draw(batch, powerText, hudX + 150, 580);
 
         batch.end();
 
@@ -710,7 +925,7 @@ public class Main extends ApplicationAdapter {
 
             font.draw(
                 batch,
-                "PAUSADO",
+                "PAUSED",
                 playfieldX + playfieldWidth / 2 - 80,
                 playfieldY + playfieldHeight / 2 + 20
             );
@@ -734,45 +949,60 @@ public class Main extends ApplicationAdapter {
 
             shape.begin(ShapeRenderer.ShapeType.Filled);
 
-            shape.setColor(Color.DARK_GRAY);
-            shape.rect(panelX, panelY, panelW, panelH);
+            Gdx.gl.glEnable(GL20.GL_BLEND);
 
-            shape.setColor(Color.WHITE);
-            shape.rect(card1X, cardY, cardW, cardH);
-            shape.rect(card2X, cardY, cardW, cardH);
-            shape.rect(card3X, cardY, cardW, cardH);
+            shape.setColor(0f, 0f, 0f, 0.75f);
+
+            shape.rect(
+                playfieldX,
+                playfieldY,
+                playfieldWidth,
+                playfieldHeight
+            );
 
             shape.end();
 
+            Gdx.gl.glDisable(GL20.GL_BLEND);
+
             batch.begin();
 
-            font.setColor(Color.WHITE);
-            font.getData().setScale(1.4f);
+            batch.draw(cardTexture, card1X, cardY, cardW, cardH);
+            batch.draw(cardTexture, card2X, cardY, cardW, cardH);
+            batch.draw(cardTexture, card3X, cardY, cardW, cardH);
 
-// título centralizado
+            font.setColor(Color.WHITE);
+            font.getData().setScale(2.3f);
+
+            // título centralizado
+            GlyphLayout titleLayout =
+                new GlyphLayout(font, "ESCOLHA UMA CARTA");
+
             font.draw(
                 batch,
                 "ESCOLHA UMA CARTA",
-                playfieldX + playfieldWidth / 2 - 170,
-                playfieldY + 760
+                playfieldX + playfieldWidth / 2f - titleLayout.width / 2f,
+                playfieldY + 800
             );
 
             // texto preto nas cartas
-            font.setColor(Color.BLACK);
+            font.setColor(Color.WHITE);
 
             // -------- CARTA 1 --------
 
             font.getData().setScale(1.2f);
 
             // título centralizado
+            GlyphLayout layout =
+                new GlyphLayout(font, currentCards[0].name);
+
             font.draw(
                 batch,
                 currentCards[0].name,
-                card1X + cardW / 2 - currentCards[0].name.length() * 7,
-                cardY + 270
+                card1X + cardW / 2f - layout.width / 2f,
+                cardY + cardH - 34
             );
 
-            font.getData().setScale(0.75f);
+            font.getData().setScale(1.00f);
 
             // descrição
             font.draw(
@@ -789,14 +1019,17 @@ public class Main extends ApplicationAdapter {
 
             font.getData().setScale(1.2f);
 
+            GlyphLayout layout2 =
+                new GlyphLayout(font, currentCards[1].name);
+
             font.draw(
                 batch,
                 currentCards[1].name,
-                card2X + cardW / 2 - currentCards[1].name.length() * 7,
-                cardY + 270
+                card2X + cardW / 2f - layout2.width / 2f,
+                cardY + cardH - 34
             );
 
-            font.getData().setScale(0.75f);
+            font.getData().setScale(1.00f);
 
             font.draw(
                 batch,
@@ -812,14 +1045,17 @@ public class Main extends ApplicationAdapter {
 
             font.getData().setScale(1.2f);
 
+            GlyphLayout layout3 =
+                new GlyphLayout(font, currentCards[2].name);
+
             font.draw(
                 batch,
                 currentCards[2].name,
-                card3X + cardW / 2 - currentCards[2].name.length() * 7,
-                cardY + 270
+                card3X + cardW / 2f - layout3.width / 2f,
+                cardY + cardH - 34
             );
 
-            font.getData().setScale(0.75f);
+            font.getData().setScale(1.00f);
 
             font.draw(
                 batch,
@@ -870,6 +1106,9 @@ public class Main extends ApplicationAdapter {
         reimuShot.dispose();
         whitePixel.dispose();
         homingShot.dispose();
+        starFull.dispose();
+        starEmpty.dispose();
+        powerPequeno.dispose();
 
         for (int i = 0; i < 8; i++) {
             idleTextures[i].dispose();
@@ -937,12 +1176,15 @@ public class Main extends ApplicationAdapter {
         float y;
         int value;
         float size;
+        float velocityY;
 
         public PowerItem(float x, float y, int value, float size) {
             this.x = x;
             this.y = y;
             this.value = value;
             this.size = size;
+
+            this.velocityY = 130f;
         }
     }
 
