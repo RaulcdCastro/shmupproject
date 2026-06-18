@@ -75,15 +75,40 @@ public class Main extends ApplicationAdapter {
     private int currentDirection = 0;
     // 0 = parado, 1 = direita, -1 = esquerda
 
+    private Texture focusModeEffect;
+    private float focusEffectRotation = 0f;
+
     private int idleFrame = 0;
     private float idleTimer = 0;
     private final float idleFrameTime = 0.10f;
+
+    private boolean playerDead = false;
+    private boolean playerInvincible = false;
+
+    private float respawnTimer = 0f;
+    private float invincibleTimer = 0f;
+
+    private final float respawnDelay = 1f;
+    private final float invincibleDuration = 3f;
 
     // fada textura
     private Texture fairyFrame1;
     private Texture fairyFrame2;
     private Texture fairyFrame3;
     private Texture fairyFrame4;
+
+    private Texture whiteFairyFrame1;
+    private Texture whiteFairyFrame2;
+    private Texture whiteFairyFrame3;
+    private Texture whiteFairyFrame4;
+
+    private Texture redFairyFrame1;
+    private Texture redFairyFrame2;
+    private Texture redFairyFrame3;
+    private Texture redFairyFrame4;
+
+    private Animation<TextureRegion> whiteFairyAnimation;
+    private Animation<TextureRegion> redFairyAnimation;
 
     // vidas, bombas e pontos
     private int lives = 3;
@@ -120,6 +145,31 @@ public class Main extends ApplicationAdapter {
     private final float enemySize = 84;
     private final float enemySpeed = 80;
 
+
+    // pattern
+    private float stageTimer = 0f;
+    private boolean spawnedFirstRed = false;
+    private boolean spawnedSecondRed = false;
+
+    private final float secondRedSpawnTime = 7f;
+
+    private final float redStopY = playfieldY + playfieldHeight - 320;
+
+    private WavePattern currentPattern = WavePattern.RED_FAIRY_DUAL;
+
+    private boolean pattern2Started = false;
+    private float pattern2Timer = 0f;
+    private int pattern2SpawnCount = 0;
+
+    // pattern 3
+    private boolean pattern3Started = false;
+    private float pattern3Timer = 0f;
+    private int pattern3LeftCount = 0;
+    private int pattern3RightCount = 0;
+    private boolean pattern3RedSpawned = false;
+    private boolean pattern3BurstSpawned = false;
+
+
     // fada animacao
     private Animation<TextureRegion> fairyAnimation;
     private float fairyAnimationTime = 0f;
@@ -150,6 +200,7 @@ public class Main extends ApplicationAdapter {
     private final int enemyPowerReward = 5; // +0.05 Power
 
     private Texture powerPequeno;
+    private Texture powerGrande;
 
     //hud
     private SpriteBatch batch;
@@ -175,17 +226,45 @@ public class Main extends ApplicationAdapter {
     private Texture homingShot;
 
     private float fireRateMultiplier = 1.0f;
-    private float playerDamageMultiplier = 1.0f;
+    private float playerDamage = 1.0f;
 
     private int maxBombs = 3;
 
-    private void spawnEnemy() {
-        Enemy enemy = new Enemy(
-            playfieldX + (float)(Math.random() * (playfieldWidth - enemySize)),
-            playfieldY + playfieldHeight - enemySize
-        );
+    private void spawnEnemy(EnemyType type, float x, float y) {
+        spawnEnemy(type, EnemyMovementType.STOP_AT_TARGET, x, y);
+    }
 
-        enemy.shotTimer = enemyShotInterval * 0.75f;
+    private void spawnEnemy(
+        EnemyType type,
+        EnemyMovementType movementType,
+        float x,
+        float y
+    ) {
+        Enemy enemy = new Enemy(x, y, type);
+
+        enemy.movementType = movementType;
+
+        enemy.startX = x;
+        enemy.startY = y;
+
+        switch (type) {
+
+            case WHITE:
+
+                enemy.shotTimer = 1.05f;
+                break;
+
+            case RED_BURST:
+
+                enemy.shotTimer = enemy.shotInterval * 0.85f;
+                break;
+
+            default:
+                enemy.shotTimer = enemy.shotInterval * 0.75f;
+                break;
+        }
+
+        enemy.targetY = redStopY;
 
         enemies.add(enemy);
     }
@@ -199,10 +278,35 @@ public class Main extends ApplicationAdapter {
         camera.setToOrtho(false, 1280, 960);
         homingShot = new Texture("guiado.png");
         homingShot.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+
+        focusModeEffect = new Texture("focusmodeeffect.png");
+        focusModeEffect.setFilter(
+            Texture.TextureFilter.Nearest,
+            Texture.TextureFilter.Nearest
+        );
+
+        playerX = playfieldX + playfieldWidth / 2f - playerDrawWidth / 2f;
+
         fairyFrame1 = new Texture("fada_movendo01.png");
         fairyFrame2 = new Texture("fada_movendo02.png");
         fairyFrame3 = new Texture("fada_movendo03.png");
         fairyFrame4 = new Texture("fada_movendo04.png");
+
+        whiteFairyFrame1 = new Texture("fadabranca01.png");
+        whiteFairyFrame2 = new Texture("fadabranca02.png");
+        whiteFairyFrame3 = new Texture("fadabranca03.png");
+        whiteFairyFrame4 = new Texture("fadabranca04.png");
+
+        redFairyFrame1 = new Texture("fadavermelha01.png");
+        redFairyFrame2 = new Texture("fadavermelha02.png");
+        redFairyFrame3 = new Texture("fadavermelha03.png");
+        redFairyFrame4 = new Texture("fadavermelha04.png");
+
+        powerGrande = new Texture("power_grande.png");
+        powerGrande.setFilter(
+            Texture.TextureFilter.Nearest,
+            Texture.TextureFilter.Nearest
+        );
 
         cardTexture = new Texture("card.png");
 
@@ -267,9 +371,9 @@ public class Main extends ApplicationAdapter {
 
         enemies = new Array<>();
 
-        for (int i = 0; i < enemyCount; i++) {
-            spawnEnemy();
-        }
+        //for (int i = 0; i < enemyCount; i++) {
+        //    spawnEnemy();
+        //}
 
         starFull = new Texture("star_full.png");
         starEmpty = new Texture("star_empty.png");
@@ -317,6 +421,24 @@ public class Main extends ApplicationAdapter {
             new TextureRegion(fairyFrame3),
             new TextureRegion(fairyFrame4)
         );
+
+        whiteFairyAnimation = new Animation<>(
+            0.12f,
+            new TextureRegion(whiteFairyFrame1),
+            new TextureRegion(whiteFairyFrame2),
+            new TextureRegion(whiteFairyFrame3),
+            new TextureRegion(whiteFairyFrame4)
+        );
+        whiteFairyAnimation.setPlayMode(Animation.PlayMode.LOOP);
+
+        redFairyAnimation = new Animation<>(
+            0.12f,
+            new TextureRegion(redFairyFrame1),
+            new TextureRegion(redFairyFrame2),
+            new TextureRegion(redFairyFrame3),
+            new TextureRegion(redFairyFrame4)
+        );
+        redFairyAnimation.setPlayMode(Animation.PlayMode.LOOP);
 
         fairyAnimation.setPlayMode(Animation.PlayMode.LOOP);
 
@@ -458,31 +580,34 @@ public class Main extends ApplicationAdapter {
                     float centerX = playerX + hitboxOffsetX - bulletDrawWidth / 2;
                     float startY = playerY + hitboxOffsetY + 20;
 
+                    float normalDamage = playerDamage;
+                    float homingDamage = playerDamage / 2f;
+
                     // tiro central
-                    bullets.add(new Bullet(centerX, startY, 0, bulletSpeed, false));
+                    bullets.add(new Bullet(centerX, startY, 0, bulletSpeed, false, normalDamage));
 
                     // tiros laterais nível 1
                     if (sideShotLevel >= 1) {
-                        bullets.add(new Bullet(centerX - 18, startY, -90, bulletSpeed, false));
-                        bullets.add(new Bullet(centerX + 18, startY, 90, bulletSpeed, false));
+                        bullets.add(new Bullet(centerX - 18, startY, -90, bulletSpeed, false, normalDamage));
+                        bullets.add(new Bullet(centerX + 18, startY, 90, bulletSpeed, false, normalDamage));
                     }
 
                     // tiros laterais nível 2
                     if (sideShotLevel >= 2) {
-                        bullets.add(new Bullet(centerX - 35, startY, -150, bulletSpeed * 0.95f, false));
-                        bullets.add(new Bullet(centerX + 35, startY, 150, bulletSpeed * 0.95f, false));
+                        bullets.add(new Bullet(centerX - 35, startY, -150, bulletSpeed * 0.95f, false, normalDamage));
+                        bullets.add(new Bullet(centerX + 35, startY, 150, bulletSpeed * 0.95f, false, normalDamage));
                     }
 
                     // teleguiados nível 1
                     if (homingShotLevel >= 1) {
-                        bullets.add(new Bullet(centerX - 50, startY, -120, bulletSpeed * 0.75f, true));
-                        bullets.add(new Bullet(centerX + 50, startY, 120, bulletSpeed * 0.75f, true));
+                        bullets.add(new Bullet(centerX - 50, startY, -120, bulletSpeed * 0.75f, true, homingDamage));
+                        bullets.add(new Bullet(centerX + 50, startY, 120, bulletSpeed * 0.75f, true, homingDamage));
                     }
 
                     // teleguiados nível 2
                     if (homingShotLevel >= 2) {
-                        bullets.add(new Bullet(centerX - 70, startY, -180, bulletSpeed * 0.7f, true));
-                        bullets.add(new Bullet(centerX + 70, startY, 180, bulletSpeed * 0.7f, true));
+                        bullets.add(new Bullet(centerX - 70, startY, -180, bulletSpeed * 0.7f, true, homingDamage));
+                        bullets.add(new Bullet(centerX + 70, startY, 180, bulletSpeed * 0.7f, true, homingDamage));
                     }
 
                     shootTimer = 0;
@@ -491,6 +616,37 @@ public class Main extends ApplicationAdapter {
                 if (score > highScore) {
                     highScore = score;
                 }
+
+                if (focusMode) {
+                    focusEffectRotation -= 180f * delta;
+                }
+
+                stageTimer += delta;
+
+                if (playerDead) {
+                    respawnTimer -= delta;
+
+                    if (respawnTimer <= 0f) {
+                        playerDead = false;
+                        playerInvincible = true;
+                        invincibleTimer = invincibleDuration;
+
+                        playerX = playfieldX + playfieldWidth / 2f - playerDrawWidth / 2f;
+                        playerY = playfieldY + 80;
+                    }
+                }
+
+                if (playerInvincible) {
+                    invincibleTimer -= delta;
+
+                    if (invincibleTimer <= 0f) {
+                        playerInvincible = false;
+                    }
+                }
+
+                updatePattern(delta);
+                updatePattern2(delta);
+                updatePattern3(delta);
 
                 //bomba
                 if (Gdx.input.isKeyJustPressed(Input.Keys.X) && bombs > 0) {
@@ -501,18 +657,10 @@ public class Main extends ApplicationAdapter {
                     for (Enemy enemy : enemies) {
                         score += 100;
 
-                        spawnPowerItems(
-                            enemy.x + enemySize / 2,
-                            enemy.y + enemySize / 2,
-                            enemyPowerReward
-                        );
+                        dropEnemyPower(enemy);
                     }
 
                     enemies.clear();
-
-                    for (int i = 0; i < enemyCount; i++) {
-                        spawnEnemy();
-                    }
 
                     enemyBullets.clear();
 
@@ -567,19 +715,20 @@ public class Main extends ApplicationAdapter {
                             bullet.x, bullet.y, bulletDrawWidth, bulletDrawHeight,
                             enemy.x, enemy.y, enemySize, enemySize
                         )) {
-                            score += 100;
-
-                            spawnPowerItems(
-                                enemy.x + enemySize / 2,
-                                enemy.y + enemySize / 2,
-                                enemyPowerReward
-                            );
-
-                            enemies.removeIndex(e);
-                            spawnEnemy();
+                            enemy.hp -= bullet.damage;
 
                             bullets.removeIndex(b);
                             bulletRemoved = true;
+
+                            if (enemy.hp <= 0) {
+                                score += 100;
+
+                                dropEnemyPower(enemy);
+
+                                enemies.removeIndex(e);
+                                //spawnEnemy();
+                            }
+
                             break;
                         }
                     }
@@ -597,22 +746,15 @@ public class Main extends ApplicationAdapter {
                 float hitboxX = playerX + hitboxOffsetX - (hitboxSize / 2);
                 float hitboxY = playerY + hitboxOffsetY - (hitboxSize / 2);
 
-                for (Enemy enemy : enemies) {
-                    if (isColliding(
-                        hitboxX, hitboxY, hitboxSize,
-                        enemy.x, enemy.y, enemySize
-                    )) {
-                        lives--;
-                        losePowerOnDeath();
-
-                        if (bombs < 3) {
-                            bombs = 3;
+                if (!playerDead && !playerInvincible) {
+                    for (Enemy enemy : enemies) {
+                        if (isColliding(
+                            hitboxX, hitboxY, hitboxSize,
+                            enemy.x, enemy.y, enemySize
+                        )) {
+                            killPlayer();
+                            break;
                         }
-
-                        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
-                        playerY = playfieldY + 80;
-
-                        break;
                     }
                 }
 
@@ -635,7 +777,7 @@ public class Main extends ApplicationAdapter {
                     float collectHitboxX = playerX;
                     float collectHitboxY = playerY;
 
-                    if (isCollidingRect(
+                    if (!playerDead && isCollidingRect(
                         collectHitboxX, collectHitboxY, collectHitboxWidth, collectHitboxHeight,
                         item.x, item.y, item.size, item.size
                     )) {
@@ -654,24 +796,20 @@ public class Main extends ApplicationAdapter {
                 for (int i = enemies.size - 1; i >= 0; i--) {
                     Enemy enemy = enemies.get(i);
 
-                    enemy.y -= enemySpeed * delta;
+                    updateEnemyMovement(enemy, delta);
 
                     if (enemy.y <= playfieldY + playfieldHeight - enemySize) {
                         enemy.shotTimer += delta;
 
-                        if (enemy.shotTimer >= enemyShotInterval) {
-                            shootRadialPattern(
-                                enemy.x + enemySize / 2,
-                                enemy.y + enemySize / 2
-                            );
-
+                        if (enemy.shotTimer >= enemy.shotInterval) {
+                            enemyShoot(enemy);
                             enemy.shotTimer = 0;
                         }
                     }
 
                     if (enemy.y < playfieldY - enemySize) {
                         enemies.removeIndex(i);
-                        spawnEnemy();
+                        //spawnEnemy();
                     }
                 }
 
@@ -682,30 +820,20 @@ public class Main extends ApplicationAdapter {
                     bullet.x += bullet.speedX * delta;
                     bullet.y += bullet.speedY * delta;
 
-                    // colisão bala inimiga + hitbox pequena do player
-                    if (isColliding(
-                        hitboxX,
-                        hitboxY,
-                        hitboxSize,
-                        bullet.x - bullet.size / 2,
-                        bullet.y - bullet.size / 2,
-                        bullet.size
-                    )) {
-                        lives--;
-                        losePowerOnDeath();
-
-                        if (bombs < 3) {
-                            bombs = 3;
+                    if (!playerDead && !playerInvincible) {
+                        if (isColliding(
+                            hitboxX,
+                            hitboxY,
+                            hitboxSize,
+                            bullet.x - bullet.size / 2,
+                            bullet.y - bullet.size / 2,
+                            bullet.size
+                        )) {
+                            killPlayer();
+                            break;
                         }
-
-                        playerX = playfieldX + playfieldWidth / 2 - playerDrawWidth / 2;
-                        playerY = playfieldY + 80;
-
-                        enemyBullets.removeIndex(i);
-                        continue;
                     }
 
-                    // remover quando sair do playfield
                     if (
                         bullet.x < playfieldX ||
                             bullet.x > playfieldX + playfieldWidth ||
@@ -743,14 +871,17 @@ public class Main extends ApplicationAdapter {
         );
 
         // fadas
-
-        TextureRegion currentFairyFrame =
-            fairyAnimation.getKeyFrame(fairyAnimationTime);
-
         for (Enemy enemy : enemies) {
+            TextureRegion enemyFrame;
+
+            if (enemy.type == EnemyType.WHITE || enemy.type == EnemyType.WHITE_PASSIVE) {
+                enemyFrame = whiteFairyAnimation.getKeyFrame(fairyAnimationTime);
+            } else {
+                enemyFrame = redFairyAnimation.getKeyFrame(fairyAnimationTime);
+            }
 
             batch.draw(
-                currentFairyFrame,
+                enemyFrame,
                 enemy.x,
                 enemy.y + 18,
                 enemySize,
@@ -760,12 +891,14 @@ public class Main extends ApplicationAdapter {
 
         for (PowerItem item : powerItems) {
 
+            Texture powerTexture = item.big ? powerGrande : powerPequeno;
+
             batch.draw(
-                powerPequeno,
+                powerTexture,
                 item.x,
                 item.y,
                 item.size,
-                item.size = 26
+                item.size
             );
         }
 
@@ -824,17 +957,72 @@ public class Main extends ApplicationAdapter {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
 
-        batch.draw(
-            currentSprite,
-            playerX,
-            playerY,
-            51,
-            75
-        );
+        if (focusMode) {
+            float effectSize = 106f;
+
+            float hx = playerX + hitboxOffsetX;
+            float hy = playerY + hitboxOffsetY;
+
+            batch.draw(
+                focusModeEffect,
+                hx - effectSize / 2f,
+                hy - effectSize / 2f,
+                effectSize / 2f,
+                effectSize / 2f,
+                effectSize,
+                effectSize,
+                1f,
+                1f,
+                focusEffectRotation,
+                0,
+                0,
+                60,
+                60,
+                false,
+                false
+            );
+        }
+
+        boolean drawPlayer = !playerDead;
+
+        if (playerInvincible) {
+            drawPlayer = ((int)(invincibleTimer * 10) % 2 == 0);
+        }
+
+        if (drawPlayer) {
+            batch.draw(
+                currentSprite,
+                playerX,
+                playerY,
+                51,
+                75
+            );
+        }
 
         for (Bullet bullet : bullets) {
             Texture shotTexture = bullet.homing ? homingShot : reimuShot;
 
+            float trailAlpha = bullet.homing ? 0.18f : 0.25f;
+
+            batch.setColor(1f, 1f, 1f, trailAlpha);
+            batch.draw(
+                shotTexture,
+                bullet.x - bullet.speedX * 0.045f,
+                bullet.y - bullet.speedY * 0.045f,
+                bulletDrawWidth,
+                bulletDrawHeight
+            );
+
+            batch.setColor(1f, 1f, 1f, trailAlpha * 0.6f);
+            batch.draw(
+                shotTexture,
+                bullet.x - bullet.speedX * 0.030f,
+                bullet.y - bullet.speedY * 0.030f,
+                bulletDrawWidth,
+                bulletDrawHeight
+            );
+
+            batch.setColor(Color.WHITE);
             batch.draw(
                 shotTexture,
                 bullet.x,
@@ -1109,6 +1297,8 @@ public class Main extends ApplicationAdapter {
         starFull.dispose();
         starEmpty.dispose();
         powerPequeno.dispose();
+        powerGrande.dispose();
+        focusModeEffect.dispose();
 
         for (int i = 0; i < 8; i++) {
             idleTextures[i].dispose();
@@ -1125,13 +1315,15 @@ public class Main extends ApplicationAdapter {
         float speedX;
         float speedY;
         boolean homing;
+        float damage;
 
-        public Bullet(float x, float y, float speedX, float speedY, boolean homing) {
+        public Bullet(float x, float y, float speedX, float speedY, boolean homing, float damage) {
             this.x = x;
             this.y = y;
             this.speedX = speedX;
             this.speedY = speedY;
             this.homing = homing;
+            this.damage = damage;
         }
     }
 
@@ -1164,10 +1356,54 @@ public class Main extends ApplicationAdapter {
     class Enemy {
         float x, y;
         float shotTimer = 0;
+        float targetY;
 
-        Enemy(float x, float y) {
+        float hp;
+        float maxHp;
+
+        float shotInterval;
+
+        EnemyType type;
+        EnemyShotType shotType;
+
+        EnemyMovementType movementType;
+        float moveTimer = 0f;
+        float startX;
+        float startY;
+
+        Enemy(float x, float y, EnemyType type) {
             this.x = x;
             this.y = y;
+            this.type = type;
+
+            switch (type) {
+                case WHITE:
+                    this.hp = 1f;
+                    this.maxHp = 1f;
+                    this.shotType = EnemyShotType.AIMED;
+                    this.shotInterval = 2.5f;
+                    break;
+
+                case WHITE_PASSIVE:
+                    this.hp = 1f;
+                    this.maxHp = 1f;
+                    this.shotType = EnemyShotType.NONE;
+                    this.shotInterval = 999f;
+                    break;
+
+                case RED:
+                    this.hp = 15f;
+                    this.maxHp = 15f;
+                    this.shotType = EnemyShotType.RADIAL;
+                    this.shotInterval = 2.0f;
+                    break;
+
+                case RED_BURST:
+                    this.hp = 35f;
+                    this.maxHp = 35f;
+                    this.shotType = EnemyShotType.RADIAL_BURST;
+                    this.shotInterval = 4.0f;
+            }
         }
     }
 
@@ -1177,12 +1413,14 @@ public class Main extends ApplicationAdapter {
         int value;
         float size;
         float velocityY;
+        boolean big;
 
-        public PowerItem(float x, float y, int value, float size) {
+        public PowerItem(float x, float y, int value, float size, boolean big) {
             this.x = x;
             this.y = y;
             this.value = value;
             this.size = size;
+            this.big = big;
 
             this.velocityY = 130f;
         }
@@ -1219,24 +1457,27 @@ public class Main extends ApplicationAdapter {
     }
 
     private void spawnPowerItems(float x, float y, int totalPower) {
+        while (totalPower >= 25) {
+            powerItems.add(new PowerItem(
+                x + (float)(Math.random() * 30 - 15),
+                y + (float)(Math.random() * 30 - 15),
+                25,
+                28,
+                true
+            ));
+            totalPower -= 25;
+        }
+
+        // pequeno
         while (totalPower >= 5) {
             powerItems.add(new PowerItem(
                 x + (float)(Math.random() * 30 - 15),
                 y + (float)(Math.random() * 30 - 15),
                 5,
-                16
+                20,
+                false
             ));
             totalPower -= 5;
-        }
-
-        while (totalPower > 0) {
-            powerItems.add(new PowerItem(
-                x + (float)(Math.random() * 30 - 15),
-                y + (float)(Math.random() * 30 - 15),
-                1,
-                10
-            ));
-            totalPower--;
         }
     }
 
@@ -1269,6 +1510,30 @@ public class Main extends ApplicationAdapter {
                 14
             ));
         }
+    }
+
+    enum EnemyType {
+        WHITE,
+        WHITE_PASSIVE,
+        RED,
+        RED_BURST
+    }
+
+    enum WavePattern {
+        RED_FAIRY_DUAL
+    }
+
+    enum EnemyMovementType {
+        STOP_AT_TARGET,
+        WHITE_LOOP_LEFT,
+        WHITE_LOOP_RIGHT
+    }
+
+    enum EnemyShotType {
+        NONE,
+        AIMED,
+        RADIAL,
+        RADIAL_BURST
     }
 
     enum CardType {
@@ -1326,7 +1591,7 @@ public class Main extends ApplicationAdapter {
             case 1:
                 return new Card("Dano +", "Aumenta o dano dos disparos.", CardType.DAMAGE);
             default:
-                return new Card("Bomba +", "Aumenta o limite de bombas.", CardType.EXTRA_BOMB);
+                return new Card("Bomba +", "Ganha uma bomba.", CardType.EXTRA_BOMB);
         }
     }
 
@@ -1354,7 +1619,7 @@ public class Main extends ApplicationAdapter {
                 break;
 
             case DAMAGE:
-                playerDamageMultiplier += 0.20f;
+                playerDamage += 0.20f;
                 break;
 
             case EXTRA_BOMB:
@@ -1382,9 +1647,9 @@ public class Main extends ApplicationAdapter {
                 break;
 
             case DAMAGE:
-                playerDamageMultiplier -= 0.20f;
-                if (playerDamageMultiplier < 1.0f) {
-                    playerDamageMultiplier = 1.0f;
+                playerDamage -= 0.20f;
+                if (playerDamage < 1.0f) {
+                    playerDamage = 1.0f;
                 }
                 break;
 
@@ -1401,17 +1666,77 @@ public class Main extends ApplicationAdapter {
         }
     }
 
+    private void killPlayer() {
+        if (playerDead || playerInvincible) {
+            return;
+        }
+
+        lives--;
+
+        dropPlayerPower();
+        losePowerOnDeath();
+
+        if (bombs < 3) {
+            bombs = 3;
+        }
+
+        playerDead = true;
+        respawnTimer = respawnDelay;
+    }
+
+    private void dropPlayerPower() {
+        int availablePower = powerPoints;
+
+        if (availablePower <= 0) {
+            return;
+        }
+
+        float centerX = playerX + hitboxOffsetX;
+        float centerY = playerY + hitboxOffsetY + 70f;
+
+        if (availablePower >= 35) {
+            PowerItem big = new PowerItem(centerX, centerY, 25, 28, true);
+            big.velocityY = 260f;
+            powerItems.add(big);
+
+            PowerItem smallLeft = new PowerItem(centerX - 28, centerY, 5, 20, false);
+            smallLeft.velocityY = 220f;
+            powerItems.add(smallLeft);
+
+            PowerItem smallRight = new PowerItem(centerX + 28, centerY, 5, 20, false);
+            smallRight.velocityY = 220f;
+            powerItems.add(smallRight);
+        } else {
+            int smallCount = availablePower / 5;
+
+            for (int i = 0; i < smallCount; i++) {
+                float offsetX = (i - (smallCount - 1) / 2f) * 18f;
+
+                PowerItem small = new PowerItem(
+                    centerX + offsetX,
+                    centerY,
+                    5,
+                    20,
+                    false
+                );
+
+                small.velocityY = 180f + i * 10f;
+                powerItems.add(small);
+            }
+        }
+    }
+
     private void losePowerOnDeath() {
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 1; i++) {
             if (!appliedCards.empty()) {
                 Card lastCard = appliedCards.pop();
                 removeCard(lastCard);
             }
         }
 
-        powerPoints -= 200;
-
-        if (powerPoints < 0) {
+        if (powerPoints >= 100) {
+            powerPoints -= 100;
+        } else {
             powerPoints = 0;
         }
     }
@@ -1457,6 +1782,312 @@ public class Main extends ApplicationAdapter {
         }
 
         return closest;
+    }
+
+    private void enemyShoot(Enemy enemy) {
+        float centerX = enemy.x + enemySize / 2;
+        float centerY = enemy.y + enemySize / 2;
+
+        switch (enemy.shotType) {
+            case NONE:
+                break;
+
+            case AIMED:
+                shootAimedPattern(centerX, centerY);
+                break;
+
+            case RADIAL:
+                shootRedFairyCirclePattern(centerX, centerY, 140f, 0f, 32);
+                break;
+
+            case RADIAL_BURST:
+                shootRedFairyCirclePattern(centerX, centerY, 60f, 0f, 16);
+                shootRedFairyCirclePattern(centerX, centerY, 95f, 11.25f, 16);
+                shootRedFairyCirclePattern(centerX, centerY, 130f, 0f, 16);
+                shootRedFairyCirclePattern(centerX, centerY, 165f, 11.25f, 16);
+                break;
+        }
+    }
+
+    private void shootAimedPattern(float centerX, float centerY) {
+        float speed = 180f;
+
+        float targetX = playerX + hitboxOffsetX;
+        float targetY = playerY + hitboxOffsetY;
+
+        float dx = targetX - centerX;
+        float dy = targetY - centerY;
+
+        float length = (float)Math.sqrt(dx * dx + dy * dy);
+
+        if (length != 0) {
+            dx /= length;
+            dy /= length;
+        }
+
+        enemyBullets.add(new EnemyBullet(
+            centerX,
+            centerY,
+            dx * speed,
+            dy * speed,
+            14
+        ));
+    }
+
+    private void shootRedFairyCirclePattern(
+        float centerX,
+        float centerY,
+        float speed,
+        float angleOffset,
+        int bulletCount
+    ) {
+        for (int i = 0; i < bulletCount; i++) {
+            float angle = (float)Math.toRadians((360f / bulletCount) * i + angleOffset);
+
+            float speedX = (float)Math.cos(angle) * speed;
+            float speedY = (float)Math.sin(angle) * speed;
+
+            enemyBullets.add(new EnemyBullet(
+                centerX,
+                centerY,
+                speedX,
+                speedY,
+                14
+            ));
+        }
+    }
+
+    private void updatePattern(float delta) {
+
+        switch (currentPattern) {
+
+            case RED_FAIRY_DUAL:
+
+                if (!spawnedFirstRed && stageTimer >= 5f) {
+                    spawnEnemy(
+                        EnemyType.RED,
+                        playfieldX + playfieldWidth - enemySize - 120,
+                        playfieldY + playfieldHeight - enemySize
+                    );
+
+                    spawnedFirstRed = true;
+                }
+
+                if (!spawnedSecondRed && stageTimer >= 10f) {
+                    spawnEnemy(
+                        EnemyType.RED,
+                        playfieldX + 120,
+                        playfieldY + playfieldHeight - enemySize
+                    );
+
+                    spawnedSecondRed = true;
+                }
+
+                break;
+        }
+    }
+
+    private void updatePattern2(float delta) {
+        if (!pattern2Started && stageTimer >= 17f) {
+            pattern2Started = true;
+            pattern2Timer = 0f;
+            pattern2SpawnCount = 0;
+        }
+
+        if (!pattern2Started) {
+            return;
+        }
+
+        pattern2Timer += delta;
+
+        if (pattern2SpawnCount < 10 && pattern2Timer >= 0.35f) {
+            pattern2Timer = 0f;
+
+            float leftX = playfieldX;
+            float rightX = playfieldX + playfieldWidth - enemySize;
+
+            float spawnY = playfieldY + playfieldHeight - enemySize - 40;
+
+            spawnEnemy(
+                EnemyType.WHITE,
+                EnemyMovementType.WHITE_LOOP_LEFT,
+                leftX,
+                spawnY
+            );
+
+            spawnEnemy(
+                EnemyType.WHITE,
+                EnemyMovementType.WHITE_LOOP_RIGHT,
+                rightX,
+                spawnY
+            );
+
+            pattern2SpawnCount++;
+        }
+    }
+
+    private void updateEnemyMovement(Enemy enemy, float delta) {
+        enemy.moveTimer += delta;
+
+        switch (enemy.movementType) {
+            case STOP_AT_TARGET:
+                if (enemy.y > enemy.targetY) {
+                    float distance = enemy.y - enemy.targetY;
+
+                    float speed = distance * 4f;
+
+                    if (speed < 60f) {
+                        speed = 60f;
+                    }
+
+                    if (speed > 420f) {
+                        speed = 420f;
+                    }
+
+                    enemy.y -= speed * delta;
+
+                    if (enemy.y < enemy.targetY) {
+                        enemy.y = enemy.targetY;
+                    }
+                }
+                break;
+
+            case WHITE_LOOP_LEFT:
+                updateWhiteLoop(enemy, false);
+                break;
+
+            case WHITE_LOOP_RIGHT:
+                updateWhiteLoop(enemy, true);
+                break;
+        }
+    }
+
+    private void updateWhiteLoop(Enemy enemy, boolean fromRight) {
+        float duration = 3.2f;
+        float t = enemy.moveTimer / duration;
+
+        if (t > 1f) {
+            enemy.y = playfieldY - enemySize - 20;
+            return;
+        }
+
+        float startX = fromRight
+            ? playfieldX + playfieldWidth - enemySize
+            : playfieldX;
+
+        float endX = fromRight
+            ? playfieldX
+            : playfieldX + playfieldWidth - enemySize;
+
+        float centerX = playfieldX + playfieldWidth / 2f - enemySize / 2f;
+
+        float baseY = playfieldY + playfieldHeight - enemySize - 120;
+        float loopHeight = 260f;
+
+        float x;
+
+        if (t < 0.5f) {
+            float localT = t / 0.5f;
+            x = lerp(startX, centerX, localT);
+        } else {
+            float localT = (t - 0.5f) / 0.5f;
+            x = lerp(centerX, endX, localT);
+        }
+
+        float y = baseY - (float)Math.sin(t * Math.PI) * loopHeight;
+
+        enemy.x = x;
+        enemy.y = y;
+    }
+
+    private float lerp(float a, float b, float t) {
+        return a + (b - a) * t;
+    }
+
+    private void updatePattern3(float delta) {
+        if (!pattern3Started && stageTimer >= 26f) {
+            pattern3Started = true;
+            pattern3Timer = 0f;
+        }
+
+        if (!pattern3Started) {
+            return;
+        }
+
+        pattern3Timer += delta;
+
+        // enxame branco passivo pela esquerda
+        if (pattern3LeftCount < 10 && pattern3Timer >= pattern3LeftCount * 0.30f) {
+            spawnEnemy(
+                EnemyType.WHITE_PASSIVE,
+                EnemyMovementType.WHITE_LOOP_LEFT,
+                playfieldX,
+                playfieldY + playfieldHeight - enemySize - 40
+            );
+
+            pattern3LeftCount++;
+        }
+
+        // enxame branco passivo pela direita, depois do esquerdo
+        if (pattern3Timer >= 4f && pattern3RightCount < 10 &&
+            pattern3Timer >= 4f + pattern3RightCount * 0.30f) {
+
+            spawnEnemy(
+                EnemyType.WHITE_PASSIVE,
+                EnemyMovementType.WHITE_LOOP_RIGHT,
+                playfieldX + playfieldWidth - enemySize,
+                playfieldY + playfieldHeight - enemySize - 40
+            );
+
+            pattern3RightCount++;
+        }
+
+        // vermelhas padrão depois do segundo enxame
+        if (!pattern3RedSpawned && pattern3Timer >= 8f) {
+            spawnEnemy(
+                EnemyType.RED,
+                playfieldX + playfieldWidth - enemySize - 120,
+                playfieldY + playfieldHeight - enemySize
+            );
+
+            spawnEnemy(
+                EnemyType.RED,
+                playfieldX + 120,
+                playfieldY + playfieldHeight - enemySize
+            );
+
+            pattern3RedSpawned = true;
+        }
+
+        // red burst no meio, um pouco mais alto
+        if (!pattern3BurstSpawned && pattern3Timer >= 14f) {
+            spawnEnemy(
+                EnemyType.RED_BURST,
+                playfieldX + playfieldWidth / 2f - enemySize / 2f,
+                playfieldY + playfieldHeight - enemySize
+            );
+
+            pattern3BurstSpawned = true;
+        }
+    }
+
+    private void dropEnemyPower(Enemy enemy) {
+        float x = enemy.x + enemySize / 2;
+        float y = enemy.y + enemySize / 2;
+
+        switch (enemy.type) {
+            case RED_BURST:
+                spawnPowerItems(x, y, 75); // 3 power grandes
+                break;
+
+            case RED:
+                spawnPowerItems(x, y, 25); // 1 power grande
+                break;
+
+            default:
+                spawnPowerItems(x, y, enemyPowerReward); // power pequeno
+                break;
+        }
     }
 
 }
