@@ -11,6 +11,7 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.audio.Music;
+import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
 import java.util.Random;
@@ -20,8 +21,6 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFont
 import com.badlogic.gdx.graphics.g2d.Animation;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
-import com.badlogic.gdx.graphics.g2d.Animation;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
 public class Main extends ApplicationAdapter {
 
@@ -117,12 +116,15 @@ public class Main extends ApplicationAdapter {
     private Animation<TextureRegion> marisaLeftAnimation;
     private Animation<TextureRegion> marisaRightAnimation;
 
+    private boolean finalBossSpawnDelayStarted = false;
+    private float finalBossSpawnDelay = 6f;
+
     private boolean finalBossSpawned = false;
 
     private Enemy currentBossEnemy = null;
 
     // teste boss
-    private final boolean debugFinalBossOnly = false;
+    private final boolean debugFinalBossOnly = false; //debug
 
     private boolean gameFinished = false;
     private float gameFinishedTimer = 0f;
@@ -131,7 +133,7 @@ public class Main extends ApplicationAdapter {
     private boolean gameOver = false;
 
     // vidas, bombas e pontos
-    private int lives = 2;
+    private int lives = 6;  //valor normal = 2
     private int bombs = 3;
     private int score = 0;
 
@@ -217,6 +219,9 @@ public class Main extends ApplicationAdapter {
     // sub chefe
     private boolean subBossSpawned = false;
 
+    private boolean subBossSpawnDelayStarted = false;
+    private float subBossSpawnDelay = 6f;
+
     private Enemy subBossEnemy = null;
 
     // pattern 7
@@ -252,6 +257,13 @@ public class Main extends ApplicationAdapter {
     private float bombTimer = 0;
     private final float bombDuration = 0.50f;
 
+    private boolean masterSparkFlashEffect = false;
+    private float masterSparkFlashTimer = 0f;
+    private final float masterSparkFlashDuration = 8.50f;
+
+    private float screenShakeTimer = 0f;
+    private float screenShakeIntensity = 0f;
+
     private Texture whitePixel;
 
     // modo foco
@@ -269,6 +281,7 @@ public class Main extends ApplicationAdapter {
     private Array<EnemyBullet> enemyBullets;
 
     private Array<EnemyLaser> enemyLasers;
+    private Array<MarisaSideLaser> marisaSideLasers;
 
     private Array<BossHorizontalLaser> bossHorizontalLasers;
     private Array<MasterSparkLaser> masterSparkLasers;
@@ -283,6 +296,10 @@ public class Main extends ApplicationAdapter {
     private Texture powerPequeno;
     private Texture powerGrande;
 
+    private Texture lifeTexture;
+
+    private Array<LifeItem> lifeItems;
+
     //hud
     private SpriteBatch batch;
     private BitmapFont font;
@@ -291,8 +308,48 @@ public class Main extends ApplicationAdapter {
     private Animation<TextureRegion> backgroundAnimation;
     private float backgroundTime = 0f;
 
-    //musica
+    //sons
     private Music backgroundMusic;
+
+    private Music lowLifeMusic;
+
+    private Sound shotSound;
+
+    private Sound bombSound;
+
+    private Sound redShot00;
+    private Sound redShot02;
+    private Sound redShot04;
+
+    private Sound whiteShot01;
+    private Sound whiteShot02;
+    private Sound whiteShot03;
+
+    private Sound deathSound;
+
+    private Sound laserSound;
+    private boolean laserSoundPlayedThisFrame = false;
+
+    private Sound pointsSound;
+    private Sound enemyDefeatedSound;
+
+    private Sound powerUpSound;
+
+    private Sound marisaLaserHitSound;
+
+    private Sound defeat01Sound;
+    private Sound defeat02Sound;
+
+    private Sound masterSparkSound;
+
+    private Sound warningSound;
+
+    private Sound lifeSound;
+
+    private boolean lowLifePlaying = false;
+
+    private float bossShotSoundTimer = 0f;
+    private final float bossShotSoundCooldown = 0.08f;
 
     //cartas
     private boolean choosingCard = false;
@@ -308,6 +365,16 @@ public class Main extends ApplicationAdapter {
 
     private float fireRateMultiplier = 1.0f;
     private float playerDamage = 1.0f; // dano padrao = 1.0f
+
+    private float criticalChance = 0f;
+
+    private float hitboxMultiplier = 1.0f;
+
+    private float moveSpeedMultiplier = 1.0f;
+    private float focusSpeedMultiplier = 1.0f;
+
+    private int witchStyleLevel = 0;
+    private int priestessStyleLevel = 0;
 
     private int maxBombs = 3;
 
@@ -372,6 +439,8 @@ public class Main extends ApplicationAdapter {
         camera.setToOrtho(false, 1280, 960);
         homingShot = new Texture("guiado.png");
         homingShot.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        lifeTexture = new Texture("vida.png");
+        lifeItems = new Array<>();
 
         focusModeEffect = new Texture("focusmodeeffect.png");
         focusModeEffect.setFilter(
@@ -467,6 +536,7 @@ public class Main extends ApplicationAdapter {
         pixmap.dispose();
 
         powerItems = new Array<>();
+        marisaSideLasers = new Array<>();
 
         uiBackground = new Texture("ui_background.png");
 
@@ -481,6 +551,78 @@ public class Main extends ApplicationAdapter {
         backgroundMusic.setLooping(true);
         backgroundMusic.setVolume(0.5f); //0.5
         backgroundMusic.play();
+
+        shotSound = Gdx.audio.newSound(Gdx.files.internal("shot.wav"));
+        redShot00 = Gdx.audio.newSound(Gdx.files.internal("red00.wav"));
+        redShot02 = Gdx.audio.newSound(Gdx.files.internal("red02.wav"));
+        redShot04 = Gdx.audio.newSound(Gdx.files.internal("red04.wav"));
+
+        whiteShot01 = Gdx.audio.newSound(
+            Gdx.files.internal("white01.wav")
+        );
+
+        whiteShot02 = Gdx.audio.newSound(
+            Gdx.files.internal("white02.wav")
+        );
+
+        whiteShot03 = Gdx.audio.newSound(
+            Gdx.files.internal("white03.wav")
+        );
+
+        bombSound = Gdx.audio.newSound(
+            Gdx.files.internal("bomb.wav")
+        );
+
+        deathSound = Gdx.audio.newSound(
+            Gdx.files.internal("death.wav")
+        );
+
+        laserSound = Gdx.audio.newSound(
+            Gdx.files.internal("laser.wav")
+        );
+
+        marisaLaserHitSound = Gdx.audio.newSound(
+            Gdx.files.internal("marisalaserhit.wav")
+        );
+
+        pointsSound = Gdx.audio.newSound(
+            Gdx.files.internal("points.wav")
+        );
+
+        enemyDefeatedSound = Gdx.audio.newSound(
+            Gdx.files.internal("enemydefeated.wav")
+        );
+
+        defeat01Sound = Gdx.audio.newSound(
+            Gdx.files.internal("defeat01.wav")
+        );
+
+        defeat02Sound = Gdx.audio.newSound(
+            Gdx.files.internal("defeat02.wav")
+        );
+
+        powerUpSound = Gdx.audio.newSound(
+            Gdx.files.internal("powerup.wav")
+        );
+
+        lowLifeMusic = Gdx.audio.newMusic(
+            Gdx.files.internal("lowlife.wav")
+        );
+
+        lowLifeMusic.setLooping(true);
+        lowLifeMusic.setVolume(0.30f);
+
+        masterSparkSound = Gdx.audio.newSound(
+            Gdx.files.internal("masterspark.wav")
+        );
+
+        warningSound = Gdx.audio.newSound(
+            Gdx.files.internal("warning.wav")
+        );
+
+        lifeSound = Gdx.audio.newSound(
+            Gdx.files.internal("vida.wav")
+        );
 
         bullets = new Array<>();
         enemyBullets = new Array<>();
@@ -592,6 +734,8 @@ public class Main extends ApplicationAdapter {
         }
 
         float delta = Gdx.graphics.getDeltaTime();
+        laserSoundPlayedThisFrame = false;
+        bossShotSoundTimer += delta;
 
         if (cardInvulnerabilityTimer > 0f) {
             cardInvulnerabilityTimer -= delta;
@@ -618,7 +762,10 @@ public class Main extends ApplicationAdapter {
                     Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
                         Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
 
-                float currentSpeed = focusMode ? focusSpeed : normalSpeed;
+                float currentSpeed =
+                    focusMode
+                        ? focusSpeed * focusSpeedMultiplier
+                        : normalSpeed * moveSpeedMultiplier;
 
                 // movimentação
                 float moveX = 0;
@@ -727,28 +874,33 @@ public class Main extends ApplicationAdapter {
                     float normalDamage = playerDamage;
                     float homingDamage = playerDamage / 2f;
 
+
+                    float witchSpreadMultiplier = 1f - witchStyleLevel * 0.25f;
+                    float priestessSpreadMultiplier = 1f + priestessStyleLevel * 0.25f;
+
                     // tiro central
                     bullets.add(new Bullet(centerX, startY, 0, bulletSpeed, false, normalDamage));
+                    shotSound.play(0.17f);
 
                     // tiros laterais nível 1
                     if (sideShotLevel >= 1) {
                         if (focusMode) {
-                            bullets.add(new Bullet(centerX - 5, startY, -20, bulletSpeed, false, normalDamage));
-                            bullets.add(new Bullet(centerX + 5, startY, 20, bulletSpeed, false, normalDamage));
+                            bullets.add(new Bullet(centerX - 5, startY, -20f * witchSpreadMultiplier, bulletSpeed, false, normalDamage));
+                            bullets.add(new Bullet(centerX + 5, startY, 20f * witchSpreadMultiplier, bulletSpeed, false, normalDamage));
                         } else {
-                            bullets.add(new Bullet(centerX - 18, startY, -90, bulletSpeed, false, normalDamage));
-                            bullets.add(new Bullet(centerX + 18, startY, 90, bulletSpeed, false, normalDamage));
+                            bullets.add(new Bullet(centerX - 18, startY, -90f * priestessSpreadMultiplier, bulletSpeed, false, normalDamage));
+                            bullets.add(new Bullet(centerX + 18, startY, 90f * priestessSpreadMultiplier, bulletSpeed, false, normalDamage));
                         }
                     }
 
                     // tiros laterais nível 2
                     if (sideShotLevel >= 2) {
                         if (focusMode) {
-                            bullets.add(new Bullet(centerX - 10, startY, -40, bulletSpeed * 0.95f, false, normalDamage));
-                            bullets.add(new Bullet(centerX + 10, startY, 40, bulletSpeed * 0.95f, false, normalDamage));
+                            bullets.add(new Bullet(centerX - 10, startY, -40f * witchSpreadMultiplier, bulletSpeed * 0.95f, false, normalDamage));
+                            bullets.add(new Bullet(centerX + 10, startY, 40f * witchSpreadMultiplier, bulletSpeed * 0.95f, false, normalDamage));
                         } else {
-                            bullets.add(new Bullet(centerX - 35, startY, -150, bulletSpeed * 0.95f, false, normalDamage));
-                            bullets.add(new Bullet(centerX + 35, startY, 150, bulletSpeed * 0.95f, false, normalDamage));
+                            bullets.add(new Bullet(centerX - 35, startY, -150f * priestessSpreadMultiplier, bulletSpeed * 0.95f, false, normalDamage));
+                            bullets.add(new Bullet(centerX + 35, startY, 150f * priestessSpreadMultiplier, bulletSpeed * 0.95f, false, normalDamage));
                         }
                     }
 
@@ -833,6 +985,8 @@ public class Main extends ApplicationAdapter {
                     !playerDead) {
                     bombs--;
 
+                    bombSound.play(0.45f);
+
                     score += 100;
 
                     for (int i = enemies.size - 1; i >= 0; i--) {
@@ -841,7 +995,25 @@ public class Main extends ApplicationAdapter {
                         score += 100;
 
                         if (enemy.bossLike) {
-                            enemy.hp -= enemy.maxHp * 0.10f;
+                            float bombDamagePercent = 0.10f;
+
+                            float hpPercent = enemy.hp / enemy.maxHp;
+
+                            if ((enemy.type == EnemyType.FINAL_BOSS ||
+                                enemy.type == EnemyType.SUBBOSS) &&
+                                hpPercent <= 0.30f) {
+
+                                bombDamagePercent = 0.05f;
+                            }
+
+                            if (enemy.type == EnemyType.FINAL_BOSS &&
+                                enemy.postMasterSparkStarted &&
+                                enemy.postMasterSparkDelay <= 0f) {
+
+                                bombDamagePercent = 0.025f;
+                            }
+
+                            enemy.hp -= enemy.maxHp * bombDamagePercent;
 
                             if (enemy.hp <= 0) {
                                 if (enemy.healthBar < enemy.maxHealthBars - 1) {
@@ -850,8 +1022,15 @@ public class Main extends ApplicationAdapter {
                                     dropEnemyPower(enemy);
 
                                     if (enemy == subBossEnemy) {
+
+                                        dropLifeItem(enemy);
+                                        defeat02Sound.play(0.18f);
+
                                         subBossEnemy = null;
                                         currentBossEnemy = null;
+
+                                        lowLifeMusic.stop();
+                                        lowLifePlaying = false;
 
                                         postBossPatternStarted = true;
                                         postBossPatternTimer = 0f;
@@ -862,6 +1041,31 @@ public class Main extends ApplicationAdapter {
                                         bombTimer = bombDuration;
                                     }
 
+                                    if (enemy.type == EnemyType.FINAL_BOSS) {
+
+                                        defeat02Sound.play(0.25f);
+
+                                        enemyBullets.clear();
+                                        enemyLasers.clear();
+                                        bossHorizontalLasers.clear();
+                                        masterSparkLasers.clear();
+
+                                        currentBossEnemy = null;
+
+                                        lowLifeMusic.stop();
+                                        lowLifePlaying = false;
+
+                                        gameFinished = true;
+                                        gameFinishedTimer = 10f;
+
+                                        bombEffect = true;
+                                        bombTimer = 1.0f;
+                                    }
+
+                                    if (!enemy.bossLike) {
+                                        enemyDefeatedSound.play(0.35f);
+                                    }
+
                                     enemies.removeIndex(i);
 
                                     bombEffect = true;
@@ -870,6 +1074,11 @@ public class Main extends ApplicationAdapter {
                             }
                         } else {
                             dropEnemyPower(enemy);
+
+                            if (!enemy.bossLike) {
+                                enemyDefeatedSound.play(0.35f);
+                            }
+
                             enemies.removeIndex(i);
                         }
                     }
@@ -886,6 +1095,14 @@ public class Main extends ApplicationAdapter {
 
                     if (bombTimer <= 0) {
                         bombEffect = false;
+                    }
+                }
+
+                if (masterSparkFlashEffect) {
+                    masterSparkFlashTimer -= delta;
+
+                    if (masterSparkFlashTimer <= 0f) {
+                        masterSparkFlashEffect = false;
                     }
                 }
 
@@ -935,6 +1152,17 @@ public class Main extends ApplicationAdapter {
                         )) {
                             float damage = bullet.damage;
 
+                            if (random.nextFloat() < criticalChance) {
+                                damage *= 2f;
+                            }
+
+                            if (enemy.type == EnemyType.FINAL_BOSS &&
+                                enemy.postMasterSparkStarted &&
+                                enemy.postMasterSparkDelay <= 0f) {
+
+                                damage *= 0.70f;
+                            }
+
                             if (enemy.bossLike) {
                                 float hpPercent = enemy.hp / enemy.maxHp;
 
@@ -957,8 +1185,15 @@ public class Main extends ApplicationAdapter {
                                     dropEnemyPower(enemy);
 
                                     if (enemy == subBossEnemy) {
+
+                                        dropLifeItem(enemy);
+                                        defeat02Sound.play(0.18f);
+
                                         subBossEnemy = null;
                                         currentBossEnemy = null;
+
+                                        lowLifeMusic.stop();
+                                        lowLifePlaying = false;
 
                                         enemyBullets.clear();
                                         enemyLasers.clear();
@@ -973,13 +1208,29 @@ public class Main extends ApplicationAdapter {
                                     }
 
                                     if (enemy.type == EnemyType.FINAL_BOSS) {
+
+                                        defeat02Sound.play(0.25f);
+
+                                        enemyBullets.clear();
+                                        enemyLasers.clear();
+                                        bossHorizontalLasers.clear();
+                                        masterSparkLasers.clear();
+                                        marisaSideLasers.clear();
+
                                         currentBossEnemy = null;
 
                                         bombEffect = true;
                                         bombTimer = 1.0f;
 
+                                        lowLifeMusic.stop();
+                                        lowLifePlaying = false;
+
                                         gameFinished = true;
                                         gameFinishedTimer = 10f;
+                                    }
+
+                                    if (!enemy.bossLike) {
+                                        enemyDefeatedSound.play(0.35f);
                                     }
 
                                     enemies.removeIndex(e);
@@ -1000,15 +1251,20 @@ public class Main extends ApplicationAdapter {
                 }
 
                 //colisoes
-                float hitboxX = playerX + hitboxOffsetX - (hitboxSize / 2);
-                float hitboxY = playerY + hitboxOffsetY - (hitboxSize / 2);
+                float currentHitboxSize = hitboxSize * hitboxMultiplier;
+
+                float hitboxX =
+                    playerX + hitboxOffsetX - (currentHitboxSize / 2f);
+
+                float hitboxY =
+                    playerY + hitboxOffsetY - (currentHitboxSize / 2f);
 
                 if (!playerDead &&
                     !playerInvincible &&
                     cardInvulnerabilityTimer <= 0f) {
                     for (Enemy enemy : enemies) {
                         if (isColliding(
-                            hitboxX, hitboxY, hitboxSize,
+                            hitboxX, hitboxY, currentHitboxSize,
                             enemy.x, enemy.y, enemySize
                         )) {
                             killPlayer();
@@ -1041,6 +1297,9 @@ public class Main extends ApplicationAdapter {
                         item.x, item.y, item.size, item.size
                     )) {
                         gainPower(item.value);
+
+                        pointsSound.play(0.25f);
+
                         powerItems.removeIndex(i);
                         continue;
                     }
@@ -1050,12 +1309,64 @@ public class Main extends ApplicationAdapter {
                     }
                 }
 
+                for (int i = lifeItems.size - 1; i >= 0; i--) {
+                    LifeItem item = lifeItems.get(i);
+
+                    item.velocityY -= 150f * delta;
+                    item.y += item.velocityY * delta;
+
+                    float maxY = playfieldY + playfieldHeight - item.size;
+
+                    if (item.y > maxY) {
+                        item.y = maxY;
+
+                        if (item.velocityY > 0) {
+                            item.velocityY = 0;
+                        }
+                    }
+
+                    if (!playerDead && isCollidingRect(
+                        playerX,
+                        playerY,
+                        collectHitboxWidth,
+                        collectHitboxHeight,
+                        item.x,
+                        item.y,
+                        item.size,
+                        item.size
+                    )) {
+                        lives++;
+                        lifeItems.removeIndex(i);
+                        pointsSound.play(0.25f);
+
+                        lifeSound.play(0.35f);
+
+                        continue;
+                    }
+
+                    if (item.y < playfieldY - item.size) {
+                        lifeItems.removeIndex(i);
+                    }
+                }
+
 
                 // inimigo descendo
                 for (int i = enemies.size - 1; i >= 0; i--) {
                     Enemy enemy = enemies.get(i);
 
                     updateEnemyMovement(enemy, delta);
+
+                    if (enemy.type == EnemyType.FINAL_BOSS &&
+                        enemy.phase2Intro) {
+
+                        updateMarisaPhase2Intro(enemy, delta);
+                    }
+
+                    if (enemy.type == EnemyType.FINAL_BOSS &&
+                        enemy.postMasterSparkStarted) {
+
+                        updateMarisaPostMasterSpark(enemy, delta);
+                    }
 
                     if (enemy.type == EnemyType.FINAL_BOSS &&
                         enemy.lastStand &&
@@ -1085,6 +1396,7 @@ public class Main extends ApplicationAdapter {
                         } else {
                             if (!enemy.phaseTransition &&
                                 !enemy.lastStand &&
+                                !enemy.phase2Intro &&
                                 enemy.shotTimer >= enemy.shotInterval) {
 
                                 enemyShoot(enemy);
@@ -1118,7 +1430,7 @@ public class Main extends ApplicationAdapter {
                         if (isColliding(
                             hitboxX,
                             hitboxY,
-                            hitboxSize,
+                            currentHitboxSize,
                             bullet.x - bullet.size / 2,
                             bullet.y - bullet.size / 2,
                             bullet.size
@@ -1157,8 +1469,33 @@ public class Main extends ApplicationAdapter {
                         laser.y = playerY + hitboxOffsetY;
                     }
 
+                    if (!laser.hitSoundPlayed &&
+                        laser.timer >= laser.followTime + laser.warningTime) {
+
+                        marisaLaserHitSound.play(0.50f);
+                        laser.hitSoundPlayed = true;
+                    }
+
                     if (laser.timer >= laser.getTotalTime()) {
                         bossHorizontalLasers.removeIndex(i);
+                    }
+                }
+
+                for (MarisaSideLaser laser : marisaSideLasers) {
+
+                    if (isCollidingRect(
+                        hitboxX,
+                        hitboxY,
+                        currentHitboxSize,
+                        currentHitboxSize,
+
+                        laser.x,
+                        playfieldY,
+                        laser.width,
+                        playfieldHeight
+                    )) {
+                        killPlayer();
+                        break;
                     }
                 }
 
@@ -1175,6 +1512,11 @@ public class Main extends ApplicationAdapter {
 
                             currentBossEnemy.damageLocked = false;
                             currentBossEnemy.finalSpellFinished = true;
+
+                            currentBossEnemy.postMasterSparkStarted = true;
+                            currentBossEnemy.postMasterSparkDelay = 1.0f;
+                            currentBossEnemy.postMasterSparkTimer = 0f;
+                            currentBossEnemy.postMasterSparkShotTimer = 0f;
                         }
                     }
                 }
@@ -1188,8 +1530,8 @@ public class Main extends ApplicationAdapter {
                             if (isCollidingRect(
                                 hitboxX,
                                 hitboxY,
-                                hitboxSize,
-                                hitboxSize,
+                                currentHitboxSize,
+                                currentHitboxSize,
 
                                 laser.x - laser.width / 2f,
                                 playfieldY,
@@ -1211,8 +1553,8 @@ public class Main extends ApplicationAdapter {
                         if (isCollidingRect(
                             hitboxX,
                             hitboxY,
-                            hitboxSize,
-                            hitboxSize,
+                            currentHitboxSize,
+                            currentHitboxSize,
 
                             playfieldX,
                             laser.y - laser.width / 2f,
@@ -1225,6 +1567,7 @@ public class Main extends ApplicationAdapter {
                         }
                     }
 
+
                     for (MasterSparkLaser laser : masterSparkLasers) {
                         if (!laser.isDangerous()) {
                             continue;
@@ -1233,8 +1576,8 @@ public class Main extends ApplicationAdapter {
                         if (isCollidingRect(
                             hitboxX,
                             hitboxY,
-                            hitboxSize,
-                            hitboxSize,
+                            currentHitboxSize,
+                            currentHitboxSize,
 
                             laser.x - laser.width / 2f,
                             playfieldY,
@@ -1262,7 +1605,20 @@ public class Main extends ApplicationAdapter {
         Gdx.gl.glClearColor(0f, 0f, 0f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
+        camera.position.set(640, 480, 0);
+
+        if (screenShakeTimer > 0f) {
+            screenShakeTimer -= delta;
+
+            float shakeX = (random.nextFloat() * 2f - 1f) * screenShakeIntensity;
+            float shakeY = (random.nextFloat() * 2f - 1f) * screenShakeIntensity;
+
+            camera.position.x += shakeX;
+            camera.position.y += shakeY;
+        }
+
         camera.update();
+
         shape.setProjectionMatrix(camera.combined);
 
         batch.setProjectionMatrix(camera.combined);
@@ -1370,12 +1726,87 @@ public class Main extends ApplicationAdapter {
             );
         }
 
+        for (LifeItem item : lifeItems) {
+            batch.draw(
+                lifeTexture,
+                item.x,
+                item.y,
+                item.size,
+                item.size
+            );
+        }
+
         batch.end();
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
         shape.begin(ShapeRenderer.ShapeType.Filled);
+
+        if (currentBossEnemy != null &&
+            currentBossEnemy.type == EnemyType.FINAL_BOSS &&
+            currentBossEnemy.phase2Intro) {
+
+            float sideWidth = 230f;
+
+            float pulse =
+                0.18f +
+                    0.22f *
+                        Math.abs(
+                            (float)Math.sin(
+                                currentBossEnemy.phase2IntroTimer * 8f
+                            )
+                        );
+
+            shape.setColor(1f, 0f, 0f, pulse);
+
+            shape.rect(
+                playfieldX,
+                playfieldY,
+                sideWidth,
+                playfieldHeight
+            );
+
+            shape.rect(
+                playfieldX + playfieldWidth - sideWidth,
+                playfieldY,
+                sideWidth,
+                playfieldHeight
+            );
+        }
+
+        for (MarisaSideLaser laser : marisaSideLasers) {
+
+            float outerBorder = 10f;
+            float middleBorder = 8f;
+
+            // borda azul externa, mais transparente
+            shape.setColor(0.15f, 0.25f, 1f, 0.35f);
+            shape.rect(
+                laser.x,
+                playfieldY,
+                laser.width,
+                playfieldHeight
+            );
+
+            // borda azul intermediária
+            shape.setColor(0.45f, 0.65f, 1f, 0.55f);
+            shape.rect(
+                laser.x + outerBorder,
+                playfieldY,
+                laser.width - outerBorder * 2f,
+                playfieldHeight
+            );
+
+            // centro branco maior
+            shape.setColor(1f, 1f, 1f, 0.90f);
+            shape.rect(
+                laser.x + outerBorder + middleBorder,
+                playfieldY,
+                laser.width - (outerBorder + middleBorder) * 2f,
+                playfieldHeight
+            );
+        }
 
         // barra de hp sub chefe
         if (currentBossEnemy != null) {
@@ -1395,8 +1826,6 @@ public class Main extends ApplicationAdapter {
             shape.setColor(1f, 0f, 0f, 1f);
             shape.rect(barX, barY, barW * hpPercent, barH);
         }
-
-
 
         // player
         //shape.setColor(Color.WHITE);
@@ -1474,64 +1903,135 @@ public class Main extends ApplicationAdapter {
         }
 
         for (BossHorizontalLaser laser : bossHorizontalLasers) {
+
             float alpha = laser.getAlpha();
 
-            float coreHeight = laser.width;
-            float glowHeight = laser.width * 2.8f;
+            float outerBorder = laser.width * 0.18f;
+            float middleBorder = laser.width * 0.14f;
 
-            shape.setColor(1f, 1f, 1f, alpha * 0.22f);
+            // brilho externo (laranja escuro)
+            //shape.setColor(1.0f, 0.35f, 0.0f, alpha * 0.30f);
+            //shape.rect(
+                //playfieldX,
+               // laser.y - laser.width * 1.35f,
+                //playfieldWidth,
+               // laser.width * 2.70f
+            //);
+
+            // borda externa
+            shape.setColor(1.0f, 0.45f, 0.05f, alpha * 0.40f);
             shape.rect(
                 playfieldX,
-                laser.y - glowHeight / 2f,
+                laser.y - laser.width / 2f,
                 playfieldWidth,
-                glowHeight
+                laser.width
             );
 
+            // borda intermediária
+            shape.setColor(1.0f, 0.72f, 0.18f, alpha * 0.65f);
+            shape.rect(
+                playfieldX,
+                laser.y - laser.width / 2f + outerBorder,
+                playfieldWidth,
+                laser.width - outerBorder * 2f
+            );
+
+            // núcleo branco
             shape.setColor(1f, 1f, 1f, alpha);
             shape.rect(
                 playfieldX,
-                laser.y - coreHeight / 2f,
+                laser.y - laser.width / 2f + outerBorder + middleBorder,
                 playfieldWidth,
-                coreHeight
+                laser.width - (outerBorder + middleBorder) * 2f
             );
         }
 
         for (MasterSparkLaser laser : masterSparkLasers) {
             float alpha = laser.getAlpha();
 
-            float coreWidth = laser.width;
-            float glowWidth = laser.width * 1.6f;
+            float baseY = playfieldY;
+            float topY = laser.y;
 
-            float topY = playfieldY + laser.length;
+            float centerX = laser.x;
 
-            shape.setColor(1f, 1f, 1f, alpha * 0.25f);
+            float outerWidth = laser.width * 1.18f;
+            float middleWidth = laser.width * 1.08f;
+            float innerWidth = laser.width;
+
+            // borda azul escuro
+            shape.setColor(0.05f, 0.15f, 1f, alpha);
             shape.rect(
-                laser.x - glowWidth / 2f,
-                playfieldY,
-                glowWidth,
-                laser.length
+                centerX - outerWidth / 2f,
+                baseY,
+                outerWidth,
+                topY - baseY
             );
             shape.circle(
-                laser.x,
+                centerX,
                 topY,
-                glowWidth / 2f
+                outerWidth / 2f
             );
 
+            // borda azul claro
+            shape.setColor(0.45f, 0.65f, 1f, alpha);
+            shape.rect(
+                centerX - middleWidth / 2f,
+                baseY,
+                middleWidth,
+                topY - baseY
+            );
+            shape.circle(
+                centerX,
+                topY,
+                middleWidth / 2f
+            );
+
+            // centro branco
             shape.setColor(1f, 1f, 1f, alpha);
             shape.rect(
-                laser.x - coreWidth / 2f,
-                playfieldY,
-                coreWidth,
-                laser.length
+                centerX - innerWidth / 2f,
+                baseY,
+                innerWidth,
+                topY - baseY
             );
             shape.circle(
-                laser.x,
+                centerX,
                 topY,
-                coreWidth / 2f
+                innerWidth / 2f
             );
         }
 
         shape.end();
+
+        if (masterSparkFlashEffect) {
+
+            shape.begin(ShapeRenderer.ShapeType.Filled);
+
+            float progress = masterSparkFlashTimer / masterSparkFlashDuration;
+
+            if (progress < 0f) progress = 0f;
+            if (progress > 1f) progress = 1f;
+
+            float alpha;
+
+            if (progress > 0.92f) {
+                // clarão inicial
+                alpha = 0.80f;
+            } else {
+
+                float t = progress / 0.92f;
+
+                // fade bem suave
+                alpha = (float)Math.pow(t, 0.35f);
+
+                alpha *= 0.80f;
+            }
+
+            shape.setColor(1f, 1f, 1f, alpha);
+            shape.rect(playfieldX, playfieldY, playfieldWidth, playfieldHeight);
+
+            shape.end();
+        }
 
         if (currentBossEnemy != null) {
             batch.begin();
@@ -2032,6 +2532,26 @@ public class Main extends ApplicationAdapter {
         powerPequeno.dispose();
         powerGrande.dispose();
         focusModeEffect.dispose();
+        redShot00.dispose();
+        redShot02.dispose();
+        redShot04.dispose();
+        bombSound.dispose();
+        whiteShot01.dispose();
+        whiteShot02.dispose();
+        whiteShot03.dispose();
+        deathSound.dispose();
+        laserSound.dispose();
+        pointsSound.dispose();
+        enemyDefeatedSound.dispose();
+        powerUpSound.dispose();
+        marisaLaserHitSound.dispose();
+        lowLifeMusic.dispose();
+        defeat01Sound.dispose();
+        defeat02Sound.dispose();
+        masterSparkSound.dispose();
+        warningSound.dispose();
+        lifeTexture.dispose();
+        lifeSound.dispose();
 
         for (int i = 0; i < 8; i++) {
             idleTextures[i].dispose();
@@ -2125,6 +2645,16 @@ public class Main extends ApplicationAdapter {
         }
     }
 
+    class MarisaSideLaser {
+        float x;
+        float width;
+
+        MarisaSideLaser(float x, float width) {
+            this.x = x;
+            this.width = width;
+        }
+    }
+
     class BossHorizontalLaser {
         float y;
         float width = 32f;
@@ -2136,6 +2666,7 @@ public class Main extends ApplicationAdapter {
         float fadeOutTime = 0.7f;
 
         boolean locked = false;
+        boolean hitSoundPlayed = false;
 
         float getTotalTime() {
             return followTime + warningTime + activeTime + fadeOutTime;
@@ -2163,14 +2694,14 @@ public class Main extends ApplicationAdapter {
     class MasterSparkLaser {
         float x;
         float y;
-        float width = 230f;
+        float width = 650f; // tamanho master
         float length;
 
         float timer = 0f;
 
-        float warningTime = 0.75f;
-        float activeTime = 2.0f;
-        float fadeOutTime = 0.8f;
+        float warningTime = 1.20f; // aviso master
+        float activeTime = 4.0f;
+        float fadeOutTime = 2.0f;
 
         boolean isDangerous() {
             return timer >= warningTime &&
@@ -2198,11 +2729,20 @@ public class Main extends ApplicationAdapter {
         boolean lastStand = false;
         float lastStandTimer = 0f;
 
+        boolean phase2Intro = false;
+        float phase2IntroTimer = 0f;
+        float phase2WarningSoundTimer = 0f;
+
         boolean finalSpellStarted = false;
         boolean finalSpellFinished = false;
         boolean damageLocked = false;
 
         float finalSpellTimer = 0f;
+
+        boolean postMasterSparkStarted = false;
+        float postMasterSparkDelay = 1.0f;
+        float postMasterSparkTimer = 0f;
+        float postMasterSparkShotTimer = 0f;
 
         float lockedX;
         float lockedY;
@@ -2316,9 +2856,9 @@ public class Main extends ApplicationAdapter {
                     this.healthBar = 0;
 
                     this.barMaxHp = new float[] {
-                        900f,
                         1000f,
-                        1500f
+                        2500f,
+                        4000f
                     };
 
                     this.hp = this.barMaxHp[0];
@@ -2355,6 +2895,20 @@ public class Main extends ApplicationAdapter {
         }
     }
 
+    class LifeItem {
+        float x;
+        float y;
+        float size;
+        float velocityY;
+
+        LifeItem(float x, float y) {
+            this.x = x;
+            this.y = y;
+            this.size = 28f;
+            this.velocityY = 260f;
+        }
+    }
+
 
     private boolean isColliding(
         float x1, float y1, float size1,
@@ -2378,11 +2932,13 @@ public class Main extends ApplicationAdapter {
         int newPowerLevel = powerPoints / 100;
 
         if (newPowerLevel > oldPowerLevel) {
+            powerUpSound.play(0.50f);
             openCardSelection();
-            // Exemplo:
-            // choosingCard = true;
-            // paused = true;
+
         }
+
+        updatePowerShotUnlocks();
+
     }
 
     private void spawnPowerItems(float x, float y, int totalPower) {
@@ -2473,11 +3029,15 @@ public class Main extends ApplicationAdapter {
     }
 
     enum CardType {
-        SIDE_SHOT,
-        HOMING_SHOT,
-        FIRE_RATE,
         DAMAGE,
-        EXTRA_BOMB
+        FIRE_RATE,
+        EXTRA_BOMB,
+        SMALL_HITBOX,
+        CRITICAL,
+        SPEED_UP,
+        FOCUS_SLOW,
+        WITCH_STYLE,
+        PRIESTESS_STYLE
     }
 
     class Card {
@@ -2493,42 +3053,137 @@ public class Main extends ApplicationAdapter {
     }
 
     private void openCardSelection() {
+
         choosingCard = true;
 
-        currentCards[0] = generateRandomCard();
-        currentCards[1] = generateRandomCard();
-        currentCards[2] = generateRandomCard();
+        Array<CardType> pool = new Array<>();
+
+        for (CardType type : CardType.values()) {
+
+            if (isCardAvailable(type)) {
+                pool.add(type);
+            }
+        }
+
+        for (int i = 0; i < 3; i++) {
+
+            if (pool.size > 0) {
+                currentCards[i] = generateRandomCard(pool);
+            }
+            else {
+                currentCards[i] = createCardByType(CardType.EXTRA_BOMB);
+            }
+        }
     }
 
-    private Card generateRandomCard() {
-        int option = random.nextInt(8);
+    private Card generateRandomCard(Array<CardType> pool) {
+        int index = random.nextInt(pool.size);
+        CardType type = pool.get(index);
+        pool.removeIndex(index);
 
-        if (option == 0 && sideShotLevel < 2) {
-            return new Card(
-                "Tiro Lateral",
-                "Adiciona 2 disparos laterais.",
-                CardType.SIDE_SHOT
-            );
+        return createCardByType(type);
+    }
+
+    private boolean isCardAvailable(CardType type) {
+        switch (type) {
+            case DAMAGE:
+                return playerDamage < 36.0f;
+
+            case FIRE_RATE:
+                return fireRateMultiplier < 1.75f;
+
+            case SMALL_HITBOX:
+                return hitboxMultiplier > 0.75f;
+
+            case CRITICAL:
+                return criticalChance < 0.25f;
+
+            case SPEED_UP:
+                return moveSpeedMultiplier < 1.30f;
+
+            case FOCUS_SLOW:
+                return focusSpeedMultiplier > 0.70f;
+
+            case WITCH_STYLE:
+                return witchStyleLevel < 2;
+
+            case PRIESTESS_STYLE:
+                return priestessStyleLevel < 2;
+
+            case EXTRA_BOMB:
+                return bombs < maxBombs;
         }
 
-        if (option == 1 && homingShotLevel < 2) {
-            return new Card(
-                "Tiro Teleguiado",
-                "Adiciona 2 disparos que seguem inimigos.",
-                CardType.HOMING_SHOT
-            );
+        return true;
+    }
+
+    private Card createCardByType(CardType type) {
+        switch (type) {
+            case FIRE_RATE:
+                return new Card(
+                    "Cadencia +",
+                    "Aumenta a velocidade dos disparos.",
+                    CardType.FIRE_RATE
+                );
+
+            case DAMAGE:
+                return new Card(
+                    "Dano +",
+                    "Aumenta o dano dos disparos.",
+                    CardType.DAMAGE
+                );
+
+            case EXTRA_BOMB:
+                return new Card(
+                    "Bomba +",
+                    "Ganha uma bomba.",
+                    CardType.EXTRA_BOMB
+                );
+
+            case SMALL_HITBOX:
+                return new Card(
+                    "Hitbox menor",
+                    "Reduz sua hitbox em 10%.",
+                    CardType.SMALL_HITBOX
+                );
+
+            case CRITICAL:
+                return new Card(
+                    "Critico +",
+                    "Aumenta em 5% a chance de dano dobrado.",
+                    CardType.CRITICAL
+                );
+
+            case SPEED_UP:
+                return new Card(
+                    "Velocidade +",
+                    "Aumenta em 10% a velocidade normal.",
+                    CardType.SPEED_UP
+                );
+
+            case FOCUS_SLOW:
+                return new Card(
+                    "Foco +",
+                    "Reduz em 10% a velocidade no modo foco.",
+                    CardType.FOCUS_SLOW
+                );
+
+            case WITCH_STYLE:
+                return new Card(
+                    "Bruxa Style",
+                    "No modo foco, os disparos laterais ficam mais fechados.",
+                    CardType.WITCH_STYLE
+                );
+
+            case PRIESTESS_STYLE:
+                return new Card(
+                    "Sacerdotisa Style",
+                    "Sem modo foco, os disparos laterais ficam mais abertos.",
+                    CardType.PRIESTESS_STYLE
+                );
         }
 
-        option = random.nextInt(3);
-
-        switch (option) {
-            case 0:
-                return new Card("Cadencia +", "Aumenta a velocidade dos disparos.", CardType.FIRE_RATE);
-            case 1:
-                return new Card("Dano +", "Aumenta o dano dos disparos.", CardType.DAMAGE);
-            default:
-                return new Card("Bomba +", "Ganha uma bomba.", CardType.EXTRA_BOMB);
-        }
+        return new Card("Carta", "Sem efeito.", CardType.DAMAGE);
     }
 
     private void chooseCard(int index) {
@@ -2544,14 +3199,6 @@ public class Main extends ApplicationAdapter {
 
     private void applyCard(Card card) {
         switch (card.type) {
-            case SIDE_SHOT:
-                if (sideShotLevel < 2) sideShotLevel++;
-                break;
-
-            case HOMING_SHOT:
-                if (homingShotLevel < 2) homingShotLevel++;
-                break;
-
             case FIRE_RATE:
                 fireRateMultiplier += 0.15f;
                 break;
@@ -2561,45 +3208,87 @@ public class Main extends ApplicationAdapter {
                 break;
 
             case EXTRA_BOMB:
-                maxBombs++;
-                bombs++;
+                bombs = Math.min(bombs + 1, maxBombs);
                 break;
+
+            case SMALL_HITBOX:
+                hitboxMultiplier = Math.max(0.75f, hitboxMultiplier * 0.90f);
+                break;
+
+            case CRITICAL:
+                criticalChance = Math.min(criticalChance + 0.05f, 0.25f);
+                break;
+
+            case SPEED_UP:
+                moveSpeedMultiplier = Math.min(
+                    moveSpeedMultiplier + 0.10f,
+                    1.30f
+                );
+                break;
+
+            case FOCUS_SLOW:
+                focusSpeedMultiplier = Math.max(
+                    focusSpeedMultiplier * 0.90f,
+                    0.70f
+                );
+                break;
+
+            case WITCH_STYLE:
+                witchStyleLevel = Math.min(witchStyleLevel + 1, 2);
+                break;
+
+            case PRIESTESS_STYLE:
+                priestessStyleLevel = Math.min(priestessStyleLevel + 1, 2);
+                break;
+
         }
     }
 
     private void removeCard(Card card) {
         switch (card.type) {
-            case SIDE_SHOT:
-                if (sideShotLevel > 0) sideShotLevel--;
-                break;
 
-            case HOMING_SHOT:
-                if (homingShotLevel > 0) homingShotLevel--;
+            case DAMAGE:
+                playerDamage -= 0.20f;
                 break;
 
             case FIRE_RATE:
                 fireRateMultiplier -= 0.15f;
-                if (fireRateMultiplier < 1.0f) {
-                    fireRateMultiplier = 1.0f;
-                }
                 break;
 
-            case DAMAGE:
-                playerDamage -= 0.20f;
-                if (playerDamage < 1.0f) {
-                    playerDamage = 1.0f;
-                }
+            case SMALL_HITBOX:
+                hitboxMultiplier = Math.min(
+                    1.0f,
+                    hitboxMultiplier / 0.90f
+                );
                 break;
 
-            case EXTRA_BOMB:
-                maxBombs--;
-                if (maxBombs < 3) {
-                    maxBombs = 3;
-                }
+            case CRITICAL:
+                criticalChance = Math.max(
+                    0f,
+                    criticalChance - 0.05f
+                );
+                break;
 
-                if (bombs > maxBombs) {
-                    bombs = maxBombs;
-                }
+            case SPEED_UP:
+                moveSpeedMultiplier = Math.max(
+                    1.0f,
+                    moveSpeedMultiplier - 0.10f
+                );
+                break;
+
+            case FOCUS_SLOW:
+                focusSpeedMultiplier = Math.min(
+                    1.0f,
+                    focusSpeedMultiplier / 0.90f
+                );
+                break;
+
+            case WITCH_STYLE:
+                witchStyleLevel = Math.max(witchStyleLevel - 1, 0);
+                break;
+
+            case PRIESTESS_STYLE:
+                priestessStyleLevel = Math.max(priestessStyleLevel - 1, 0);
                 break;
         }
     }
@@ -2612,6 +3301,9 @@ public class Main extends ApplicationAdapter {
         lives--;
 
         if (lives < 0) {
+
+            deathSound.play(0.42f);
+
             gameOver = true;
             paused = true;
             return;
@@ -2623,6 +3315,8 @@ public class Main extends ApplicationAdapter {
         if (bombs < 3) {
             bombs = 3;
         }
+
+        deathSound.play(0.42f);
 
         playerDead = true;
         respawnTimer = respawnDelay;
@@ -2715,7 +3409,7 @@ public class Main extends ApplicationAdapter {
         float closestDistance = Float.MAX_VALUE;
 
         for (Enemy enemy : enemies) {
-            if (enemy.phaseTransition) {
+            if (enemy.phaseTransition || enemy.damageLocked) {
                 continue;
             }
 
@@ -2742,10 +3436,12 @@ public class Main extends ApplicationAdapter {
 
             case AIMED:
                 shootAimedPattern(centerX, centerY);
+                playWhiteShotSound();
                 break;
 
             case RADIAL:
                 shootRedFairyCirclePattern(centerX, centerY, 140f, 0f, 32);
+                playRedShotSound();
                 break;
 
             case RADIAL_BURST:
@@ -2753,10 +3449,12 @@ public class Main extends ApplicationAdapter {
                 shootRedFairyCirclePattern(centerX, centerY, 95f, 11.25f, 16);
                 shootRedFairyCirclePattern(centerX, centerY, 130f, 0f, 16);
                 shootRedFairyCirclePattern(centerX, centerY, 165f, 11.25f, 16);
+                playRedShotSound();
                 break;
 
             case LASER:
                 shootPurpleLaser(enemy);
+                playLaserSoundOncePerFrame();
                 break;
 
             case SUBBOSS_BURST:
@@ -2940,6 +3638,17 @@ public class Main extends ApplicationAdapter {
     }
 
     private void updateEnemyMovement(Enemy enemy, float delta) {
+
+        if (enemy.type == EnemyType.FINAL_BOSS &&
+            enemy.finalSpellStarted &&
+            !enemy.finalSpellFinished) {
+
+            enemy.x = enemy.lockedX;
+            enemy.y = enemy.lockedY;
+            enemy.bossMoveDirection = 0;
+            return;
+        }
+
         enemy.moveTimer += delta;
 
         switch (enemy.movementType) {
@@ -3294,16 +4003,28 @@ public class Main extends ApplicationAdapter {
     }
 
     private void updateSubBossSpawn(float delta) {
-        if (!subBossSpawned && stageTimer >= 105f && enemies.size == 0) {
-            subBossEnemy = spawnEnemy(
-                EnemyType.SUBBOSS,
-                playfieldX + playfieldWidth / 2f - enemySize / 2f,
-                playfieldY + playfieldHeight - enemySize
-            );
 
-            currentBossEnemy = subBossEnemy;
+        if (!subBossSpawned &&
+            pattern6PurpleSpawned &&
+            enemies.size == 0) {
 
-            subBossSpawned = true;
+            if (!subBossSpawnDelayStarted) {
+                subBossSpawnDelayStarted = true;
+                subBossSpawnDelay = 4f;
+            }
+
+            subBossSpawnDelay -= delta;
+
+            if (subBossSpawnDelay <= 0f) {
+                subBossEnemy = spawnEnemy(
+                    EnemyType.SUBBOSS,
+                    playfieldX + playfieldWidth / 2f - enemySize / 2f,
+                    playfieldY + playfieldHeight - enemySize
+                );
+
+                currentBossEnemy = subBossEnemy;
+                subBossSpawned = true;
+            }
         }
     }
 
@@ -3315,10 +4036,15 @@ public class Main extends ApplicationAdapter {
         float hpPercent = enemy.hp / enemy.maxHp;
 
         if (hpPercent <= 0.30f && enemy.attackPhase == 0) {
+
+            if (!lowLifePlaying) {
+                lowLifeMusic.play();
+                lowLifePlaying = true;
+            }
+
             enemy.attackPhase = 1;
 
             if (enemy.type == EnemyType.FINAL_BOSS) {
-                enemy.shotInterval = 0.08f;
                 return;
             }
 
@@ -3337,10 +4063,24 @@ public class Main extends ApplicationAdapter {
 
         dropBossBarPower(enemy);
 
+        bombEffect = true;
+        bombTimer = bombDuration;
+
+        enemyDefeatedSound.play(0.45f);
+        defeat01Sound.play(0.60f);
+
         enemyBullets.clear();
         enemyLasers.clear();
+        bossHorizontalLasers.clear();
+        marisaSideLasers.clear();
 
         enemy.phaseTransition = true;
+
+        if (lowLifePlaying) {
+            lowLifeMusic.stop();
+            lowLifePlaying = false;
+        }
+
         enemy.phaseTransitionTimer = 3f;
 
         enemy.x = playfieldX + playfieldWidth / 2f - enemySize / 2f;
@@ -3403,6 +4143,12 @@ public class Main extends ApplicationAdapter {
                     enemy.shotInterval = 0.08f;
                 }
 
+                if (enemy.type == EnemyType.FINAL_BOSS &&
+                    enemy.healthBar == 1) {
+
+                    startMarisaPhase2Intro(enemy);
+                }
+
             } else {
                 enemy.shotInterval = 2.4f;
             }
@@ -3413,6 +4159,8 @@ public class Main extends ApplicationAdapter {
     private void shootSubBossBurst(Enemy enemy) {
         float centerX = enemy.x + enemySize / 2f;
         float centerY = enemy.y + enemySize / 2f;
+
+        playBossShotSound();
 
         if (enemy.healthBar == 0) {
             // PRIMEIRA BARRA
@@ -3736,14 +4484,24 @@ public class Main extends ApplicationAdapter {
                 enemies.size == 0 &&
                 !finalBossSpawned) {
 
-                pattern10Started = false;
-                finalBossSpawned = true;
+                if (!finalBossSpawnDelayStarted) {
+                    finalBossSpawnDelayStarted = true;
+                    finalBossSpawnDelay = 5f;
+                }
 
-                currentBossEnemy = spawnEnemy(
-                    EnemyType.FINAL_BOSS,
-                    playfieldX + playfieldWidth / 2f - 40f,
-                    playfieldY + playfieldHeight - 78f
-                );
+                finalBossSpawnDelay -= delta;
+
+                if (finalBossSpawnDelay <= 0f) {
+
+                    pattern10Started = false;
+                    finalBossSpawned = true;
+
+                    currentBossEnemy = spawnEnemy(
+                        EnemyType.FINAL_BOSS,
+                        playfieldX + playfieldWidth / 2f - 40f,
+                        playfieldY + playfieldHeight - 78f
+                    );
+                }
             }
         }
     }
@@ -3770,10 +4528,17 @@ public class Main extends ApplicationAdapter {
         float centerX = enemy.x + 40f;
         float centerY = enemy.y + 39f;
 
+        playBossShotSound();
+
         // TERCEIRA BARRA
         if (enemy.healthBar == 2) {
 
             float hpPercent = enemy.hp / enemy.maxHp;
+
+            if (hpPercent <= 0.30f && !lowLifePlaying) {
+                lowLifeMusic.play();
+                lowLifePlaying = true;
+            }
 
             if (enemy.lastStand) {
                 enemy.patternShotCount++;
@@ -3793,7 +4558,16 @@ public class Main extends ApplicationAdapter {
                 bombEffect = true;
                 bombTimer = bombDuration;
 
+                enemyDefeatedSound.play(0.45f);
+
                 return;
+            }
+
+            if (hpPercent <= 0.50f) {
+
+                if (enemy.patternShotCount % 15 == 0) {
+                    shootBossAimed(centerX, centerY);
+                }
             }
 
             float baseAngle = enemy.patternShotCount * 8f;
@@ -3836,8 +4610,15 @@ public class Main extends ApplicationAdapter {
             int shotgunInterval = 14;
 
             if (hpPercent <= 0.30f) {
+
                 shotgunCount = 5;
                 shotgunInterval = 8;
+
+                if (!lowLifePlaying) {
+                    lowLifeMusic.play();
+                    lowLifePlaying = true;
+                }
+
             }
 
             if (enemy.patternShotCount % shotgunInterval == 0) {
@@ -3886,8 +4667,12 @@ public class Main extends ApplicationAdapter {
 
         if (hpPercent <= 0.30f) {
 
-            if (enemy.patternShotCount % 10 == 0) {
+            if (!lowLifePlaying) {
+                lowLifeMusic.play();
+                lowLifePlaying = true;
+            }
 
+            if (enemy.patternShotCount % 10 == 0) {
                 shootBossAimed(centerX - 25f, centerY);
                 shootBossAimed(centerX, centerY);
                 shootBossAimed(centerX + 25f, centerY);
@@ -3901,6 +4686,8 @@ public class Main extends ApplicationAdapter {
         BossHorizontalLaser laser = new BossHorizontalLaser();
         laser.y = playerY + hitboxOffsetY;
         bossHorizontalLasers.add(laser);
+
+        playLaserSoundOncePerFrame();
     }
 
     private void shootBossShotgun(
@@ -3952,7 +4739,7 @@ public class Main extends ApplicationAdapter {
         float targetY =
             playfieldY +
                 playfieldHeight -
-                190f;
+                75f;
 
         float oldX = enemy.x;
 
@@ -3999,17 +4786,259 @@ public class Main extends ApplicationAdapter {
         enemyLasers.clear();
         bossHorizontalLasers.clear();
 
-        bombEffect = true;
-        bombTimer = bombDuration;
+        masterSparkFlashEffect = true;
+        masterSparkFlashTimer = masterSparkFlashDuration;
+
+        masterSparkSound.play(0.55f);
+
+        startScreenShake(7.20f, 10f);
 
         MasterSparkLaser laser = new MasterSparkLaser();
 
         laser.x = enemy.x + 40f;
-        laser.y = enemy.y - 10f;
+        laser.y = enemy.y - 350f; // altura master
         laser.length = laser.y - playfieldY;
 
         masterSparkLasers.add(laser);
     }
+
+    private void playRedShotSound() {
+
+        float volume = 0.30f + random.nextFloat() * 0.08f;
+
+        switch (random.nextInt(3)) {
+
+            case 0:
+                redShot00.play(volume);
+                break;
+
+            case 1:
+                redShot02.play(volume);
+                break;
+
+            default:
+                redShot04.play(volume);
+                break;
+        }
+    }
+
+    private void playWhiteShotSound() {
+
+        float volume = 0.22f + random.nextFloat() * 0.06f;
+
+        switch (random.nextInt(3)) {
+
+            case 0:
+                whiteShot01.play(volume);
+                break;
+
+            case 1:
+                whiteShot02.play(volume);
+                break;
+
+            default:
+                whiteShot03.play(volume);
+                break;
+        }
+    }
+
+    private void playBossShotSound() {
+
+        if (bossShotSoundTimer < bossShotSoundCooldown) {
+            return;
+        }
+
+        bossShotSoundTimer = 0f;
+
+        float volume = 0.05f + random.nextFloat() * 0.02f;
+
+        switch (random.nextInt(3)) {
+
+            case 0:
+                whiteShot01.play(volume);
+                break;
+
+            case 1:
+                whiteShot02.play(volume);
+                break;
+
+            default:
+                whiteShot03.play(volume);
+                break;
+        }
+    }
+
+    private void playLaserSoundOncePerFrame() {
+        if (laserSoundPlayedThisFrame) {
+            return;
+        }
+
+        laserSound.play(0.38f);
+        laserSoundPlayedThisFrame = true;
+    }
+
+    private void startScreenShake(float duration, float intensity) {
+        screenShakeTimer = duration;
+        screenShakeIntensity = intensity;
+    }
+
+    private void updateMarisaPostMasterSpark(Enemy enemy, float delta) {
+
+        if (enemy.postMasterSparkDelay > 0f) {
+            enemy.postMasterSparkDelay -= delta;
+            enemy.bossMoveDirection = 0;
+            return;
+        }
+
+        enemy.postMasterSparkTimer += delta;
+        enemy.postMasterSparkShotTimer += delta;
+
+        float centerX =
+            playfieldX +
+                playfieldWidth / 2f -
+                enemySize / 2f;
+
+        float centerY =
+            playfieldY +
+                playfieldHeight -
+                220f;
+
+        float horizontalRadius =
+            playfieldWidth / 2f -
+                enemySize / 2f -
+                20f;
+
+        float verticalRadius = 45f;
+
+        float speed = 2.6f;
+
+        float oldX = enemy.x;
+
+        float t = enemy.postMasterSparkTimer * speed;
+
+        enemy.x =
+            centerX +
+                (float)Math.sin(t) *
+                    horizontalRadius;
+
+        enemy.y =
+            centerY +
+                (float)Math.sin(t * 2f) *
+                    verticalRadius;
+
+        float moveAmount = enemy.x - oldX;
+
+        if (moveAmount > 0.3f) {
+            enemy.bossMoveDirection = 1;
+        } else if (moveAmount < -0.3f) {
+            enemy.bossMoveDirection = -1;
+        } else {
+            enemy.bossMoveDirection = 0;
+        }
+
+        if (enemy.postMasterSparkShotTimer >= 0.18f) {
+            shootBossAimed(enemy.x + 40f, enemy.y + 39f);
+            enemy.postMasterSparkShotTimer = 0f;
+        }
+    }
+
+    private void startMarisaPhase2Intro(Enemy enemy) {
+        enemy.phase2Intro = true;
+        enemy.phase2IntroTimer = 4f;
+        enemy.phase2WarningSoundTimer = 0f;
+
+        enemy.damageLocked = true;
+        enemy.shotTimer = 0f;
+        enemy.patternShotCount = 0;
+
+        enemyBullets.clear();
+        enemyLasers.clear();
+        bossHorizontalLasers.clear();
+        marisaSideLasers.clear();
+    }
+
+    private void updateMarisaPhase2Intro(Enemy enemy, float delta) {
+        if (!enemy.phase2Intro) {
+            return;
+        }
+
+        enemy.damageLocked = true;
+        enemy.shotTimer = 0f;
+        enemy.bossMoveDirection = 0;
+
+        enemy.phase2IntroTimer -= delta;
+        enemy.phase2WarningSoundTimer -= delta;
+
+        if (enemy.phase2WarningSoundTimer <= 0f) {
+            warningSound.play(0.55f);
+            enemy.phase2WarningSoundTimer = 1f;
+        }
+
+        if (enemy.phase2IntroTimer <= 0f) {
+            enemy.phase2Intro = false;
+            enemy.damageLocked = false;
+
+            spawnMarisaSideLasers();
+
+            enemy.shotTimer = 0f;
+            enemy.patternShotCount = 0;
+        }
+    }
+
+    private void spawnMarisaSideLasers() {
+        marisaSideLasers.clear();
+
+        float sideWidth = 230f;
+
+        marisaSideLasers.add(
+            new MarisaSideLaser(
+                playfieldX,
+                sideWidth
+            )
+        );
+
+        marisaSideLasers.add(
+            new MarisaSideLaser(
+                playfieldX + playfieldWidth - sideWidth,
+                sideWidth
+            )
+        );
+
+        playLaserSoundOncePerFrame();
+    }
+
+    private void dropLifeItem(Enemy enemy) {
+        lifeItems.add(
+            new LifeItem(
+                enemy.x + enemySize / 2f - 14f,
+                enemy.y + enemySize / 2f
+            )
+        );
+    }
+
+    private void updatePowerShotUnlocks() {
+        float power = powerPoints / 100f;
+
+        homingShotLevel = 0;
+        sideShotLevel = 0;
+
+        if (power >= 3f) {
+            homingShotLevel = 1;
+        }
+
+        if (power >= 6f) {
+            sideShotLevel = 1;
+        }
+
+        if (power >= 9f) {
+            homingShotLevel = 2;
+        }
+
+        if (power >= 12f) {
+            sideShotLevel = 2;
+        }
+    }
+
 
     private void restartGame() {
         enemies.clear();
@@ -4119,6 +5148,26 @@ public class Main extends ApplicationAdapter {
         bossHorizontalLasers.clear();
         enemyLasers.clear();
         enemyBullets.clear();
+        lowLifeMusic.stop();
+        lowLifePlaying = false;
+
+        finalBossSpawnDelayStarted = false;
+        finalBossSpawnDelay = 6f;
+
+        subBossSpawnDelayStarted = false;
+        subBossSpawnDelay = 6f;
+
+        hitboxMultiplier = 1.0f;
+
+        criticalChance = 0f;
+
+        moveSpeedMultiplier = 1.0f;
+
+        focusSpeedMultiplier = 1.0f;
+
+        witchStyleLevel = 0;
+
+        priestessStyleLevel = 0;
 
     }
 
